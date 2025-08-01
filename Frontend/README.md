@@ -99,12 +99,12 @@ The Vite configuration includes proxy settings for the backend:
 ## Usage Flow
 
 1. **Sign up/Login** with username, email, and password
-2. **Create Room** or **Join Room** with room ID
+2. **Create Room** or **Join Room** from existing rooms on the list
 3. **Wait for users** to join the room
 4. **Submit menu** options when the room starts
-5. **Vote** on submitted menus to exclude unwanted options
+5. **Vote** on submitted menus to exclude unwanted options -> not available yet
 6. **View results** when the random draw selects the winning menu
-7. **Room resets** automatically for another round
+7. **Room resets** automatically for another round ->not available yet
 
 ## Contributing
 
