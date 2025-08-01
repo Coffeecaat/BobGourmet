@@ -186,7 +186,3 @@ Found a bug? Please open an issue on GitHub with:
 - Expected behavior
 - Actual behavior
 - Environment details
-
----
-
-Built with ❤️ using Spring Boot
