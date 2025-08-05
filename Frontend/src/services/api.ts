@@ -1,7 +1,7 @@
 import axios from 'axios';
-import { AuthResponse, LoginRequest, SignupRequest, CreateRoomRequest, JoinRoomRequest, MenuSubmission } from '../types';
+import { AuthResponse, LoginRequest, SignupRequest, CreateRoomRequest, MenuSubmission } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ? `${import.meta.env.VITE_API_BASE_URL}/api` : '/api';
+const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL ? `${(import.meta as any).env.VITE_API_BASE_URL}/api` : '/api';
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -10,14 +10,55 @@ const api = axios.create({
   },
 });
 
-// Add token to requests
+// Add token to requests (except auth endpoints)
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  // Don't add token to authentication endpoints
+  const authEndpoints = ['/auth/login', '/auth/register'];
+  const isAuthEndpoint = authEndpoints.some(endpoint => config.url?.includes(endpoint));
+  
+  if (!isAuthEndpoint) {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
   }
   return config;
 });
+
+// Response interceptor to handle token expiration
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Check if this is a login error - don't redirect on login failures
+    const isLoginError = error.config?.url?.includes('/auth/login') || error.config?.url?.includes('/auth/register');
+    
+    if ((error.response?.status === 401 || error.response?.status === 403) && !isLoginError) {
+      // Token is expired or invalid (but not a login failure)
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      localStorage.removeItem('bobgourmet_current_room'); // Clear room state too
+      
+      // Show toast message before redirect
+      if (typeof window !== 'undefined') {
+        // Use dynamic import to avoid dependency issues
+        import('react-hot-toast').then(({ default: toast }) => {
+          toast.error('Session expired. Please login again.', {
+            duration: 6000, // Show session expiry for 6 seconds
+          });
+        }).catch(() => {
+          // Fallback if toast is not available
+          console.warn('Session expired. Please login again.');
+        });
+      }
+      
+      // Small delay to allow toast to show before redirect
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 100);
+    }
+    return Promise.reject(error);
+  }
+);
 
 // Auth endpoints
 export const authAPI = {
