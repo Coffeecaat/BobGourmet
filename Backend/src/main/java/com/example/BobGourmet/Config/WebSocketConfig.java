@@ -37,7 +37,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private final UserDetailsService userDetailsService;
 
     @Value("${cors.allowed-origins}")
-    private String[] allowedOrigins;
+    private String allowedOrigins;
 
     public void configureMessageBroker(MessageBrokerRegistry config){
 

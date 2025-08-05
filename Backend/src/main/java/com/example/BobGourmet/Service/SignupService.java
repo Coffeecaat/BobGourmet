@@ -17,6 +17,10 @@ public class SignupService {
         if(userRepository.findByUsername(request.getUsername()).isPresent()){
             throw new RuntimeException("Username is already in use");
         }
+        
+        if(userRepository.findByEmail(request.getEmail()).isPresent()){
+            throw new RuntimeException("Email is already in use");
+        }
 
         User user = new User();
         user.setUsername(request.getUsername());
