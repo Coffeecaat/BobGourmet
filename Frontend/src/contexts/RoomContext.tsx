@@ -32,7 +32,7 @@ interface RoomProviderProps {
 }
 
 export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
-  const { token, user } = useAuth();
+  const { token, user, isTokenValid } = useAuth();
   const [currentRoom, setCurrentRoom] = useState<Room | null>(() => {
     // Try to restore room state from localStorage on initial load
     try {
@@ -58,13 +58,26 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
 
   // Handle initial connection and room recovery
   useEffect(() => {
-    if (!token || !user) return;
+    if (!token || !user) {
+      // Clear room state if no valid authentication
+      setCurrentRoom(null);
+      return;
+    }
+
+    // Check if token is still valid
+    if (!isTokenValid()) {
+      // Token is expired, clear room state
+      setCurrentRoom(null);
+      return;
+    }
 
     const initializeConnection = async () => {
       try {
         // Always ensure WebSocket is connected when we have a token
         if (!webSocketService.isConnected()) {
+          console.log('Connecting to WebSocket...');
           await webSocketService.connect(token);
+          console.log('WebSocket connected successfully');
         }
 
         // If we have a saved room, try to recover the room state
@@ -74,20 +87,27 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
             // Fetch current room details from server to verify room still exists
             const roomDetails = await roomAPI.getRoomInfo(currentRoom.roomId);
             setCurrentRoom(roomDetails);
-            toast.success('Room state recovered successfully');
+            toast.success('Room state recovered successfully', { duration: 3000 });
           } catch (error: any) {
             console.error('Failed to recover room state:', error);
             if (error.response?.status === 404) {
               // Room no longer exists
               setCurrentRoom(null);
-              toast.info('Previous room no longer exists');
+              toast.error('Previous room no longer exists', { duration: 4000 });
+            } else if (error.response?.status === 500) {
+              // Server error - room might still exist, don't clear state yet
+              console.warn('Server error during room recovery, keeping room state');
+              toast.error('Unable to verify room status. Please try refreshing again.', { duration: 5000 });
             } else {
-              toast.warn('Failed to recover room state. Please rejoin the room.');
+              // Other error - clear room state
+              setCurrentRoom(null);
+              toast.error('Failed to recover room state. Please rejoin the room.', { duration: 4000 });
             }
           }
         }
       } catch (error) {
         console.error('Failed to initialize WebSocket connection:', error);
+        toast.error('Connection failed. Please check your internet connection.', { duration: 4000 });
       }
     };
 
@@ -102,13 +122,41 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
   }, [token, user]); // Don't include currentRoom here to avoid infinite loops
 
   useEffect(() => {
-    if (!currentRoom) return;
+    if (!currentRoom || !token) return;
 
     let unsubscribeRoom: (() => void) | undefined;
     let unsubscribeClosure: (() => void) | undefined;
 
     const setupSubscriptions = async () => {
       try {
+        // Ensure WebSocket is connected before setting up subscriptions
+        let attempts = 0;
+        const maxAttempts = 10;
+        
+        while (!webSocketService.isConnected() && attempts < maxAttempts) {
+          console.log(`Waiting for WebSocket connection... (attempt ${attempts + 1}/${maxAttempts})`);
+          if (attempts === 0) {
+            // Try to connect if not already connected
+            try {
+              await webSocketService.connect(token);
+            } catch (connectError) {
+              console.error('Failed to connect WebSocket:', connectError);
+            }
+          }
+          
+          // Wait 500ms before next check
+          await new Promise(resolve => setTimeout(resolve, 500));
+          attempts++;
+        }
+
+        if (!webSocketService.isConnected()) {
+          console.error('Failed to establish WebSocket connection after multiple attempts');
+          toast.error('Real-time updates unavailable. Please refresh the page.', { duration: 5000 });
+          return;
+        }
+
+        console.log('Setting up WebSocket subscriptions for room:', currentRoom.roomId);
+        
         unsubscribeRoom = webSocketService.subscribeToRoom(
           currentRoom.roomId,
           (message: WebSocketMessage) => {
@@ -120,7 +168,7 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
           currentRoom.roomId,
           () => {
             console.log('Room closure message received for room:', currentRoom.roomId);
-            toast.error('Room has been closed by the host');
+            toast.error('Room has been closed by the host', { duration: 4000 });
             // Clear all room state
             setCurrentRoom(null);
             setDrawResult(null);
@@ -130,8 +178,11 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
             webSocketService.disconnect();
           }
         );
+
+        console.log('WebSocket subscriptions established successfully');
       } catch (error) {
         console.error('Failed to setup WebSocket subscriptions:', error);
+        toast.error('Failed to establish real-time connection. Some features may not work properly.', { duration: 5000 });
       }
     };
 
@@ -141,7 +192,7 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
       unsubscribeRoom?.();
       unsubscribeClosure?.();
     };
-  }, [currentRoom?.roomId]);
+  }, [currentRoom?.roomId, token]);
 
   const handleWebSocketMessage = (message: WebSocketMessage) => {
     console.log('WebSocket message received:', message); // Debug log

@@ -22,7 +22,7 @@ class WebSocketService {
         this.client.deactivate();
       }
 
-      const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws-BobGourmet';
+      const wsUrl = (import.meta as any).env?.VITE_WS_URL || 'ws://localhost:8080/ws-BobGourmet';
       const sockjsUrl = wsUrl.replace('ws://', 'http://').replace('wss://', 'https://');
 
       this.client = new Client({

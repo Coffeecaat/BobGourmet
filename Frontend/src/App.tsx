@@ -128,12 +128,16 @@ const App: React.FC = () => {
           <div className="App">
             <AppContent />
             <Toaster 
-              position="top-right"
+              position="top-center"
               toastOptions={{
-                duration: 4000,
+                // Remove duration from global config to let individual toasts control it
                 style: {
-                  background: '#363636',
-                  color: '#fff',
+                  fontSize: '14px',
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+                  maxWidth: '400px',
+                  zIndex: 9999,
                 },
               }}
             />
