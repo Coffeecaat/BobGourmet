@@ -7,6 +7,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   login: (data: LoginRequest) => Promise<void>;
+  loginWithOAuth: (code: string, state?: string | null) => Promise<void>;
   signup: (data: SignupRequest) => Promise<void>;
   logout: () => void;
   isLoading: boolean;
@@ -148,6 +149,63 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const loginWithOAuth = async (code: string, state?: string | null) => {
+    try {
+      setIsLoading(true);
+      
+      // Send OAuth code to backend for token exchange
+      const response = await authAPI.loginWithGoogle(code, state);
+      
+      console.log('OAuth login response:', response);
+      
+      setToken(response.accessToken);
+      
+      // Create user object from OAuth response
+      const user: User = {
+        username: response.username || response.email,
+        email: response.email || ''
+      };
+      
+      setUser(user);
+      
+      localStorage.setItem('token', response.accessToken);
+      localStorage.setItem('user', JSON.stringify(user));
+      
+      toast.success('Google login successful!', {
+        duration: 4000,
+      });
+      
+      setIsLoading(false);
+    } catch (error: any) {
+      console.error('OAuth login error:', error);
+      const errorMessage = error.response?.data?.message || 'Google login failed';
+      
+      setIsLoading(false);
+      
+      toast.error(errorMessage, {
+        duration: 4000,
+        position: 'top-center',
+        style: {
+          background: '#DC2626',
+          color: '#fff',
+          fontWeight: 'bold',
+          fontSize: '20px',
+          padding: '30px 40px',
+          borderRadius: '16px',
+          border: '5px solid #EF4444',
+          boxShadow: '0 25px 30px -5px rgba(0, 0, 0, 0.2), 0 15px 15px -5px rgba(0, 0, 0, 0.1)',
+          zIndex: 999999,
+          minWidth: '500px',
+          maxWidth: '700px',
+          lineHeight: '1.6',
+          textAlign: 'center',
+        },
+      });
+      
+      throw error;
+    }
+  };
+
   const logout = () => {
     setToken(null);
     setUser(null);
@@ -162,6 +220,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     user,
     token,
     login,
+    loginWithOAuth,
     signup,
     logout,
     isLoading,

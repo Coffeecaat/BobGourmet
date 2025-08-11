@@ -2,6 +2,7 @@ import React from 'react';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '../../contexts/AuthContext';
 import { LoginRequest } from '../../types';
+import { GoogleOAuthButton } from './GoogleOAuthButton';
 
 interface LoginFormProps {
   onSwitchToSignup: () => void;
@@ -62,6 +63,31 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup }) => {
           {isLoading ? 'Logging in...' : 'Login'}
         </button>
       </form>
+
+      <div className="mt-6">
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-300" />
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-2 bg-white text-gray-500">Or continue with</span>
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <GoogleOAuthButton
+            onSuccess={(credential) => {
+              // Handle success if needed
+              console.log('Google OAuth success:', credential);
+            }}
+            onError={() => {
+              // Handle error if needed
+              console.error('Google OAuth error');
+            }}
+            disabled={isLoading}
+          />
+        </div>
+      </div>
 
       <p className="text-center mt-4 text-sm text-gray-600">
         Don't have an account?{' '}

@@ -13,7 +13,7 @@ const api = axios.create({
 // Add token to requests (except auth endpoints)
 api.interceptors.request.use((config) => {
   // Don't add token to authentication endpoints
-  const authEndpoints = ['/auth/login', '/auth/register'];
+  const authEndpoints = ['/auth/login', '/auth/register', '/auth/oauth'];
   const isAuthEndpoint = authEndpoints.some(endpoint => config.url?.includes(endpoint));
   
   if (!isAuthEndpoint) {
@@ -30,7 +30,9 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     // Check if this is a login error - don't redirect on login failures
-    const isLoginError = error.config?.url?.includes('/auth/login') || error.config?.url?.includes('/auth/register');
+    const isLoginError = error.config?.url?.includes('/auth/login') || 
+                         error.config?.url?.includes('/auth/register') ||
+                         error.config?.url?.includes('/auth/oauth');
     
     if ((error.response?.status === 401 || error.response?.status === 403) && !isLoginError) {
       // Token is expired or invalid (but not a login failure)
@@ -64,6 +66,9 @@ api.interceptors.response.use(
 export const authAPI = {
   login: (data: LoginRequest): Promise<AuthResponse> =>
     api.post('/auth/login', data).then(res => res.data),
+  
+  loginWithGoogle: (code: string, state?: string | null): Promise<AuthResponse> =>
+    api.post('/auth/oauth/google', { code, state }).then(res => res.data),
   
   signup: (data: SignupRequest): Promise<{ message: string }> =>
     api.post('/auth/register', data).then(res => ({ message: res.data })),
