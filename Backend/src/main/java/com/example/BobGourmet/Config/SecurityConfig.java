@@ -19,6 +19,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -32,6 +33,9 @@ public class SecurityConfig {
     @Value("${cors.allowed-origins:http://localhost:5173}")
     private String[] allowedOrigins;
 
+    @Value("${oauth.frontend.base-url:http://localhost:5173}")
+    private String frontendBaseUrl;
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtProvider jwtProvider, UserDetailsService userDetailsService) throws Exception {
 
@@ -41,7 +45,8 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/logout",
+                        .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/logout", "/api/auth/oauth/**",
+                                "/oauth2/**", "/login/oauth2/**",
                                 "/swagger-ui/**",
                                 "/swagger-resources/**",
                                 "/webjars/**",
@@ -49,6 +54,12 @@ public class SecurityConfig {
                         .requestMatchers("/ws-BobGourmet/**").permitAll()
                         .requestMatchers("/api/MatchRooms/**").authenticated()
                         .anyRequest().authenticated()
+                )
+                .oauth2Login(oauth2 -> oauth2
+                        .loginPage(frontendBaseUrl) //Redirect unauthorized users here
+                        .defaultSuccessUrl(frontendBaseUrl+"/auth/callback",true)
+                        .failureUrl(frontendBaseUrl+"/auth/callback?error=oauth_failed")
+                        .permitAll()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
@@ -59,7 +70,12 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        configuration.setAllowedOrigins(List.of(allowedOrigins));
+        //Parse allowed origins and add frontend base URL
+        List<String> origins = new ArrayList<>(List.of(allowedOrigins));
+        origins.add(frontendBaseUrl);
+        origins.add("https://accounts.google.com");
+
+        configuration.setAllowedOrigins(origins);
         configuration.setMaxAge(3600L); //preflight cache
         configuration.setExposedHeaders(List.of("Authorization"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
