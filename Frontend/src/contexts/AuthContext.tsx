@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, LoginRequest, SignupRequest } from '../types';
 import { authAPI } from '../services/api';
+import { getUserFromJWT } from '../utils/jwt';
 import toast from 'react-hot-toast';
 
 interface AuthContextType {
@@ -52,9 +53,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const savedToken = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
     
-    if (savedToken && savedUser && isTokenValid()) {
+    if (savedToken && isTokenValid()) {
       setToken(savedToken);
-      setUser(JSON.parse(savedUser));
+      
+      // Extract user data from JWT token
+      const jwtUserData = getUserFromJWT(savedToken);
+      if (jwtUserData) {
+        const savedUserData = savedUser ? JSON.parse(savedUser) : {};
+        const user: User = {
+          username: jwtUserData.username,
+          email: savedUserData.email || '',
+          nickname: jwtUserData.nickname
+        };
+        setUser(user);
+        localStorage.setItem('user', JSON.stringify(user));
+      } else if (savedUser) {
+        setUser(JSON.parse(savedUser));
+      }
     } else if (savedToken || savedUser) {
       // Token exists but is invalid, clear storage
       localStorage.removeItem('token');
@@ -156,14 +171,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Send OAuth code to backend for token exchange
       const response = await authAPI.loginWithGoogle(code, state);
       
-      console.log('OAuth login response:', response);
-      
       setToken(response.accessToken);
       
-      // Create user object from OAuth response
+      // Extract user data from JWT token
+      const jwtUserData = getUserFromJWT(response.accessToken);
       const user: User = {
-        username: response.username || response.email,
-        email: response.email || ''
+        username: jwtUserData?.username || response.username || response.email,
+        email: response.email || '',
+        nickname: jwtUserData?.nickname
       };
       
       setUser(user);

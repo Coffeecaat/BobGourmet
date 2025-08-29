@@ -27,7 +27,7 @@ public class User implements UserDetails {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
     @Column(nullable = false, unique = true) private String username;
     @Column(nullable = false, unique = true) private String email;
-    @Column(nullable = false) private String password;
+    @Column(nullable = true) private String password;
     @Column(nullable = false) private String nickname;
     @CreationTimestamp private LocalDateTime createdAt;
     @Column(name= "oauth_provider") private String oauthProvider;
@@ -47,7 +47,7 @@ public class User implements UserDetails {
     public User(String username, String email, String nickname, String oauthProvider, String oauthId){
         this.username = username;
         this.email = email;
-        this.password = ""; // no password for OAuth users
+        this.password = null; // no password for OAuth users
         this.nickname = nickname;
         this.oauthProvider = oauthProvider;
         this.oauthId = oauthId;

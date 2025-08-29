@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { AuthResponse, LoginRequest, SignupRequest, CreateRoomRequest, MenuSubmission } from '../types';
 
-const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL ? `${(import.meta as any).env.VITE_API_BASE_URL}/api` : '/api';
+const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL ? `${(import.meta as any).env.VITE_API_BASE_URL}/api` : 'https://bobgourmet-backend-j5uigawfda-du.a.run.app/api';
 
 const api = axios.create({
   baseURL: API_BASE,

@@ -12,8 +12,7 @@ export const OAuthCallback: React.FC = () => {
       try {
         // Get URL parameters
         const urlParams = new URLSearchParams(window.location.search);
-        const code = urlParams.get('code');
-        const state = urlParams.get('state');
+        const token = urlParams.get('token');
         const error = urlParams.get('error');
 
         if (error) {
@@ -23,16 +22,45 @@ export const OAuthCallback: React.FC = () => {
           return;
         }
 
-        if (code) {
-          // Exchange code for JWT token via backend
-          await loginWithOAuth(code, state);
+        if (token) {
+          // Backend has already processed OAuth and returned JWT token
+          console.log('Received OAuth token:', token.substring(0, 20) + '...');
           
-          // Redirect to original page or dashboard
-          const redirectUrl = localStorage.getItem('oauth_redirect_url') || '/';
-          localStorage.removeItem('oauth_redirect_url');
-          navigate(redirectUrl);
+          // Decode token to get user info
+          try {
+            if (token.split('.').length !== 3) {
+              throw new Error('Invalid JWT format');
+            }
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            console.log('Decoded JWT payload:', payload);
+            const user = {
+              username: payload.sub,
+              email: payload.email || ''
+            };
+            
+            // Store in localStorage
+            localStorage.setItem('token', token);
+            localStorage.setItem('user', JSON.stringify(user));
+            
+            // Trigger a page reload to update AuthContext
+            toast.success('Google login successful!', {
+              duration: 2000,
+            });
+            
+            // Wait a bit for the toast then reload to update AuthContext
+            setTimeout(() => {
+              window.location.href = localStorage.getItem('oauth_redirect_url') || '/';
+              localStorage.removeItem('oauth_redirect_url');
+            }, 1000);
+            
+          } catch (err) {
+            console.error('Could not decode token for user info:', err);
+            toast.error('Invalid authentication token');
+            navigate('/');
+            return;
+          }
         } else {
-          // No code received, redirect to home
+          // No token received, redirect to home
           navigate('/');
         }
       } catch (error) {
@@ -43,7 +71,7 @@ export const OAuthCallback: React.FC = () => {
     };
 
     handleOAuthCallback();
-  }, [loginWithOAuth, navigate]);
+  }, [navigate]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">

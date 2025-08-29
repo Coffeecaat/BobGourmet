@@ -12,11 +12,9 @@ export const GoogleOAuthButton: React.FC<GoogleOAuthButtonProps> = ({
   disabled = false
 }) => {
   const handleGoogleLogin = () => {
-    // This will be updated once you add the OAuth library
-    // For now, we'll create a placeholder that redirects to backend OAuth endpoint
-    
-    const backendUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
-    const googleOAuthUrl = `${backendUrl}/oauth2/authorization/google`;
+    // Use the current backend service for OAuth
+    const oauthBackendUrl = process.env.REACT_APP_API_URL || 'https://bobgourmet-backend-j5uigawfda-du.a.run.app';
+    const googleOAuthUrl = `${oauthBackendUrl}/oauth2/authorization/google`;
     
     // Store current page to redirect back after OAuth
     localStorage.setItem('oauth_redirect_url', window.location.pathname);

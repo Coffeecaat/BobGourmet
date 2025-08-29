@@ -22,11 +22,17 @@ public class SignupService {
             throw new RuntimeException("Email is already in use");
         }
 
-        User user = new User();
-        user.setUsername(request.getUsername());
-        user.setEmail(request.getEmail());
-        user.setPassword(passwordEncoder.encode(request.getPassword()));
-        user.setNickname(request.getNickname());
+        // Validate password is provided for regular signup
+        if (request.getPassword() == null || request.getPassword().trim().isEmpty()) {
+            throw new RuntimeException("Password is required for regular signup");
+        }
+
+        User user = new User(
+            request.getUsername(),
+            request.getEmail(), 
+            passwordEncoder.encode(request.getPassword()),
+            request.getNickname()
+        );
 
         userRepository.save(user);
     }
