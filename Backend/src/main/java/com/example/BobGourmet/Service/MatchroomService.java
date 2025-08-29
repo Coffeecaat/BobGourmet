@@ -5,6 +5,7 @@ import com.example.BobGourmet.DTO.RoomDTO.JoinRoomRequest;
 import com.example.BobGourmet.DTO.Participant;
 import com.example.BobGourmet.DTO.RoomDTO.RoomDetails;
 import com.example.BobGourmet.DTO.WebSocketMessage;
+import com.example.BobGourmet.DTO.MenuDTO.MenuStatus;
 import com.example.BobGourmet.Entity.User;
 import com.example.BobGourmet.Exception.RoomException;
 import com.example.BobGourmet.Repository.MatchRoomRepository;
@@ -34,6 +35,7 @@ public class MatchroomService {
     private final PasswordEncoder passwordEncoder;
     private final SimpMessagingTemplate messagingTemplate;
     private final RoomStateService roomStateService;
+    private final MenuService menuService;
 
     private static final int MAX_JOIN_ATTEMPTS = 3;
     private static final int DRAW_RESULT_VIEW_DURATION_MS = 10000;
@@ -158,11 +160,28 @@ public class MatchroomService {
                     log.info("User '{}' joined room '{}' (endpoint: {}:{}) via optimistic lock", username, roomId, joinerIp, joinerPort);
                     RoomDetails roomDetails = buildRoomDetails(roomId);
                     broadcastParticipantUpdate(roomId, roomDetails.getParticipants());
+                    
+                    // Broadcast current menu status to ensure new joiner sees existing submitted menus
+                    MenuStatus currentMenuStatus = menuService.buildMenuStatus(roomId);
+                    broadcastMenuStatusUpdate(roomId, currentMenuStatus);
 
                     if("waiting".equals(roomDetails.getState())){
                         roomStateService.startMenuInput(roomId);
                         return buildRoomDetails(roomId);
                     }
+                    
+                    // Handle late joiner: if room is in "submitted" state but new user hasn't submitted,
+                    // transition back to "inputting" to allow the new user to submit
+                    if("submitted".equals(roomDetails.getState())){
+                        Map<String, Boolean> submitStatus = matchRoomRepository.getRoomSubmitStatus(roomId);
+                        boolean newUserHasSubmitted = submitStatus.getOrDefault(username, false);
+                        if(!newUserHasSubmitted) {
+                            log.info("New user '{}' joined room '{}' in submitted state. Resuming menu input for late joiner.", username, roomId);
+                            roomStateService.resumeMenuInput(roomId);
+                            return buildRoomDetails(roomId);
+                        }
+                    }
+                    
                     return roomDetails;
 
                 case 1: throw new RoomException("방 참여 실패: 방이 꽉 찼습니다.");
@@ -205,17 +224,34 @@ public class MatchroomService {
         String roomId = roomIdOpt.get();
         log.info("User '{}' attempting to leave room '{}'", username, roomId);
 
-        long result = matchRoomRepository.tryLeaveRoomAtomically(username, roomId);
+        // Get room details before leaving to determine if user was host
         Map<String, String> roomDetailsMapBeforeLeave = matchRoomRepository.getRoomDetailsMap(roomId);
+        String hostUsername = roomDetailsMapBeforeLeave.get("hostUsername");
+        boolean isHost = username.equals(hostUsername);
+
+        long result = matchRoomRepository.tryLeaveRoomAtomically(username, roomId);
 
         switch((int) result){
             case 0:
                 log.info("User '{}' successfully left room '{}'", username, roomId);
+                
+                // Clear user's submitted menus if not host (host leaving closes room anyway)
+                if (!isHost) {
+                    clearUserMenuData(roomId, username);
+                    log.info("Cleared menu data for departing user '{}' in room '{}'", username, roomId);
+                }
+                
                 // broadcasting participants' list through WebSocket
                 // buildRoomDetails can be called when the room still exists
                 // if any players are in the room, sending updated participants list
                 if(matchRoomRepository.getRoomUserCount(roomId) >0) {
                     broadcastParticipantUpdate(roomId, buildRoomDetails(roomId).getParticipants());
+                    
+                    // Broadcast updated menu status after clearing user's data
+                    if (!isHost) {
+                        MenuStatus updatedMenuStatus = menuService.buildMenuStatus(roomId);
+                        broadcastMenuStatusUpdate(roomId, updatedMenuStatus);
+                    }
                 }
                 break;
             case 1:
@@ -274,6 +310,25 @@ public class MatchroomService {
             }
         }
         log.info("All menu data cleared for room '{}'.", roomId);
+    }
+
+    @Transactional
+    public void clearUserMenuData(String roomId, String username) {
+        // Remove user's submitted menus
+        List<String> userMenus = matchRoomRepository.getSubmittedMenus(roomId, username);
+        if (userMenus != null && !userMenus.isEmpty()) {
+            // Clear the user's submitted menus from the room
+            matchRoomRepository.saveSubmittedMenus(roomId, username, new ArrayList<>());
+            log.debug("Cleared {} submitted menus for user '{}' in room '{}'", userMenus.size(), username, roomId);
+        }
+        
+        // Update user's submit status to false
+        matchRoomRepository.updateUserSubmitStatus(roomId, username, false);
+        
+        // Reset user's menu quota (if applicable)
+        matchRoomRepository.initUserMenuQuota(roomId, username, 4); // Default quota
+        
+        log.info("Cleared all menu data for user '{}' in room '{}'", username, roomId);
     }
 
     public void startPick(String username, String roomId){
@@ -427,6 +482,12 @@ public class MatchroomService {
         payload.put("closedBy", leavingUsername);
         messagingTemplate.convertAndSend("/topic/room/" + roomId + "/closed", payload);
         log.info("Broadcast room closed for room {}. Closed by {}", roomId, leavingUsername);
+    }
+
+    private void broadcastMenuStatusUpdate(String roomId, MenuStatus menuStatus) {
+        WebSocketMessage<MenuStatus> message = new WebSocketMessage<>("MENU_STATUS_UPDATE", menuStatus);
+        messagingTemplate.convertAndSend("/topic/room/" + roomId + "/menuStatus", message);
+        log.debug("Broadcast menu status update for room {}", roomId);
     }
 
 }
