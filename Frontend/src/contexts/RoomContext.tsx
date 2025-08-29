@@ -126,6 +126,7 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
 
     let unsubscribeRoom: (() => void) | undefined;
     let unsubscribeClosure: (() => void) | undefined;
+    let unsubscribeMenuStatus: (() => void) | undefined;
 
     const setupSubscriptions = async () => {
       try {
@@ -157,14 +158,14 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
 
         console.log('Setting up WebSocket subscriptions for room:', currentRoom.roomId);
         
-        unsubscribeRoom = webSocketService.subscribeToRoom(
+        unsubscribeRoom = await webSocketService.subscribeToRoom(
           currentRoom.roomId,
           (message: WebSocketMessage) => {
             handleWebSocketMessage(message);
           }
         );
 
-        unsubscribeClosure = webSocketService.subscribeToRoomClosure(
+        unsubscribeClosure = await webSocketService.subscribeToRoomClosure(
           currentRoom.roomId,
           () => {
             console.log('Room closure message received for room:', currentRoom.roomId);
@@ -176,6 +177,14 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
             setMenuStatus(null);
             // Disconnect WebSocket when room is closed
             webSocketService.disconnect();
+          }
+        );
+
+        // Subscribe to menu status updates specifically
+        unsubscribeMenuStatus = await webSocketService.subscribeToMenuStatus(
+          currentRoom.roomId,
+          (message: WebSocketMessage) => {
+            handleWebSocketMessage(message);
           }
         );
 
@@ -191,19 +200,16 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
     return () => {
       unsubscribeRoom?.();
       unsubscribeClosure?.();
+      unsubscribeMenuStatus?.();
     };
   }, [currentRoom?.roomId, token]);
 
   const handleWebSocketMessage = (message: WebSocketMessage) => {
-    console.log('WebSocket message received:', message); // Debug log
-    
     switch (message.type) {
       case 'ROOM_STATE_UPDATE':
-        console.log('Updating room state:', message.payload);
         setCurrentRoom(message.payload);
         break;
       case 'PARTICIPANT_UPDATE':
-        console.log('Updating participants:', message.payload);
         // Update participants list and users array
         if (currentRoom) {
           const oldUsers = currentRoom.users || [];
@@ -234,9 +240,6 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
         }
         break;
       case 'MENU_STATUS_UPDATE':
-        console.log('Menu status update:', message.payload);
-        console.log('User submit status:', message.payload.userSubmitStatus);
-        console.log('Submitted count:', Object.values(message.payload.userSubmitStatus || {}).filter(Boolean).length);
         setMenuStatus(message.payload);
         
         // Convert submitted menus to MenuOption format for existing components
@@ -245,7 +248,6 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
         setMenus(menuOptions);
         break;
       case 'draw_result':
-        console.log('Draw result received:', message.payload);
         // Backend sends {"selectedMenu": "pizza"}, convert to expected format
         const drawResultData = {
           selectedMenu: [message.payload.selectedMenu], // Convert string to array
@@ -254,13 +256,20 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
         setDrawResult(drawResultData);
         break;
       default:
-        console.log('Unknown WebSocket message type:', message.type, message);
+        // Unknown message type
     }
   };
 
   const createRoom = async (roomName: string, maxUsers: number, isPrivate: boolean, password?: string) => {
     try {
       setIsLoading(true);
+      
+      // Ensure WebSocket is connected before creating room (same as joinRoom)
+      if (token && !webSocketService.isConnected()) {
+        console.log('Connecting to WebSocket before creating room...');
+        await webSocketService.connect(token);
+      }
+      
       const response = await roomAPI.createRoom({ roomName, maxUsers, isPrivate, password });
       setCurrentRoom(response);
       toast.success('Room created successfully!');
@@ -276,15 +285,39 @@ export const RoomProvider: React.FC<RoomProviderProps> = ({ children }) => {
     try {
       setIsLoading(true);
       
-      // Ensure WebSocket is connected before joining
+      // Connect WebSocket first
       if (token && !webSocketService.isConnected()) {
         console.log('Connecting to WebSocket before joining room...');
         await webSocketService.connect(token);
       }
       
+      // Set up WebSocket subscriptions BEFORE API call - event-driven approach
+      const [roomSubscription, closureSubscription, menuSubscription] = await Promise.all([
+        webSocketService.subscribeToRoom(roomId, (message: WebSocketMessage) => {
+          handleWebSocketMessage(message);
+        }),
+        webSocketService.subscribeToRoomClosure(roomId, () => {
+          console.log('Room closure message received for room:', roomId);
+          toast.error('Room has been closed by the host', { duration: 4000 });
+          setCurrentRoom(null);
+          setDrawResult(null);
+          setMenus([]);
+          setMenuStatus(null);
+          webSocketService.disconnect();
+        }),
+        webSocketService.subscribeToMenuStatus(roomId, (message: WebSocketMessage) => {
+          handleWebSocketMessage(message);
+        })
+      ]);
+      
+      // Now make API call - broadcasts will be received by established subscriptions
       const response = await roomAPI.joinRoom(roomId, password);
-      console.log('Join room response:', response); // Debug log
-      setCurrentRoom(response); // Backend returns RoomDetails directly
+      
+      // Set the room details - subscriptions are already established
+      setCurrentRoom(response);
+      
+      // Store unsubscribe functions for cleanup (we'll handle this in useEffect cleanup)
+      // The existing useEffect cleanup will still work since it checks for these variables
       
       // The WebSocket should handle real-time updates, so we rely on that
       // instead of polling for room state

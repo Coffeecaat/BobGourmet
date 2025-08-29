@@ -22,7 +22,7 @@ class WebSocketService {
         this.client.deactivate();
       }
 
-      const wsUrl = (import.meta as any).env?.VITE_WS_URL || 'ws://localhost:8080/ws-BobGourmet';
+      const wsUrl = (import.meta as any).env?.VITE_WS_URL || 'wss://bobgourmet-backend-j5uigawfda-du.a.run.app/ws-BobGourmet';
       const sockjsUrl = wsUrl.replace('ws://', 'http://').replace('wss://', 'https://');
 
       this.client = new Client({
@@ -98,43 +98,93 @@ class WebSocketService {
     this.token = null;
   }
 
-  subscribeToRoom(roomId: string, onMessage: (message: WebSocketMessage) => void): () => void {
-    if (!this.client || !this.connected) {
-      throw new Error('WebSocket not connected');
-    }
-
-    const subscription = this.client.subscribe(
-      `/topic/room/${roomId}/events`,
-      (message) => {
-        try {
-          const parsedMessage: WebSocketMessage = JSON.parse(message.body);
-          onMessage(parsedMessage);
-        } catch (error) {
-          console.error('Failed to parse WebSocket message:', error);
-        }
+  subscribeToRoom(roomId: string, onMessage: (message: WebSocketMessage) => void): Promise<() => void> {
+    return new Promise((resolve, reject) => {
+      if (!this.client || !this.connected) {
+        reject(new Error('WebSocket not connected'));
+        return;
       }
-    );
 
-    return () => {
-      subscription.unsubscribe();
-    };
+      try {
+        const subscription = this.client.subscribe(
+          `/topic/room/${roomId}/events`,
+          (message) => {
+            try {
+              const parsedMessage: WebSocketMessage = JSON.parse(message.body);
+              onMessage(parsedMessage);
+            } catch (error) {
+              console.error('Failed to parse WebSocket message:', error);
+            }
+          }
+        );
+
+        // Resolve immediately when subscription is established
+        const unsubscribe = () => {
+          subscription.unsubscribe();
+        };
+        
+        resolve(unsubscribe);
+      } catch (error) {
+        reject(error);
+      }
+    });
   }
 
-  subscribeToRoomClosure(roomId: string, onRoomClosed: () => void): () => void {
-    if (!this.client || !this.connected) {
-      throw new Error('WebSocket not connected');
-    }
-
-    const subscription = this.client.subscribe(
-      `/topic/room/${roomId}/closed`,
-      () => {
-        onRoomClosed();
+  subscribeToRoomClosure(roomId: string, onRoomClosed: () => void): Promise<() => void> {
+    return new Promise((resolve, reject) => {
+      if (!this.client || !this.connected) {
+        reject(new Error('WebSocket not connected'));
+        return;
       }
-    );
 
-    return () => {
-      subscription.unsubscribe();
-    };
+      try {
+        const subscription = this.client.subscribe(
+          `/topic/room/${roomId}/closed`,
+          () => {
+            onRoomClosed();
+          }
+        );
+
+        const unsubscribe = () => {
+          subscription.unsubscribe();
+        };
+        
+        resolve(unsubscribe);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  subscribeToMenuStatus(roomId: string, onMessage: (message: WebSocketMessage) => void): Promise<() => void> {
+    return new Promise((resolve, reject) => {
+      if (!this.client || !this.connected) {
+        reject(new Error('WebSocket not connected'));
+        return;
+      }
+
+      try {
+        const subscription = this.client.subscribe(
+          `/topic/room/${roomId}/menuStatus`,
+          (message) => {
+            try {
+              const parsedMessage: WebSocketMessage = JSON.parse(message.body);
+              onMessage(parsedMessage);
+            } catch (error) {
+              console.error('Failed to parse menu status message:', error);
+            }
+          }
+        );
+
+        const unsubscribe = () => {
+          subscription.unsubscribe();
+        };
+        
+        resolve(unsubscribe);
+      } catch (error) {
+        reject(error);
+      }
+    });
   }
 
   isConnected(): boolean {
