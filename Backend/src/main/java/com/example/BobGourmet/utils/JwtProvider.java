@@ -37,14 +37,28 @@ public class JwtProvider {
         return doGenerateToken(claims, username);
     }
 
+    public String generateToken(String username, String nickname){
+        Map<String,Object> claims = new HashMap<>();
+        if(nickname != null){
+            claims.put("nickname", nickname);
+        }
+        return doGenerateToken(claims, username);
+    }
+
     public String doGenerateToken(Map<String,Object> claims, String subject){
-        return Jwts.builder()
+        String token = Jwts.builder()
                 .claims(claims)
                 .subject(subject) // 사용자 식별값(아이디)
                 .issuedAt(new Date(System.currentTimeMillis())) // 토큰 발급 시간
                 .expiration(new Date(System.currentTimeMillis() + jwtExpirationMs)) // 만료 시간
                 .signWith(key) // 서명
                 .compact();
+        
+        return token;
+    }
+
+    public String getNicknameFromToken(String token){
+        return getClaimFromToken(token, claims -> claims.get("nickname",String.class));
     }
 
 

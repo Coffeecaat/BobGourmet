@@ -44,7 +44,6 @@ public class OAuth2UserService {
     }
 
     public User findOrCreateUser(GoogleUserInfo googleUserInfo) {
-
         String email = googleUserInfo.getEmail();
         String googleId = googleUserInfo.getSub();
 
@@ -74,7 +73,7 @@ public class OAuth2UserService {
         // Create new user
         String baseUsername = generateUsernameFromGoogleInfo(googleUserInfo);
         String uniqueUsername = ensureUniqueUsername(baseUsername);
-        String nickname = googleUserInfo.getName() != null ? googleUserInfo.getName() : uniqueUsername;
+        String nickname = generateNicknameFromGoogleInfo(googleUserInfo, uniqueUsername);
 
         User newUser = new User(uniqueUsername, email, nickname, "google", googleId);
         return userRepository.save(newUser);
@@ -82,17 +81,51 @@ public class OAuth2UserService {
     }
 
     private String generateUsernameFromGoogleInfo(GoogleUserInfo googleUserInfo) {
-
+        // Try given name first - allow Korean characters and other Unicode letters
         if(googleUserInfo.getGivenName() != null){
-            return googleUserInfo.getGivenName().replaceAll("[^a-zA-z0-9]","").toLowerCase();
+            String username = googleUserInfo.getGivenName().replaceAll("[^\\p{L}\\p{N}]","").toLowerCase();
+            if (!username.isEmpty()) {
+                return username;
+            }
         }
 
+        // Try full name - allow Korean characters and other Unicode letters
         if(googleUserInfo.getName() != null){
-            return googleUserInfo.getName().replaceAll("[^a-zA-z0-9]","").toLowerCase();
+            String username = googleUserInfo.getName().replaceAll("[^\\p{L}\\p{N}]","").toLowerCase();
+            if (!username.isEmpty()) {
+                return username;
+            }
         }
 
         // Fallback to email prefix
-        return googleUserInfo.getEmail().split("@")[0].replaceAll("[^a-zA-z0-9]","");
+        String emailPrefix = googleUserInfo.getEmail().split("@")[0].replaceAll("[^\\p{L}\\p{N}]","");
+        if (!emailPrefix.isEmpty()) {
+            return emailPrefix;
+        }
+        
+        // Final fallback - use google ID
+        return "user" + googleUserInfo.getSub();
+    }
+
+    private String generateNicknameFromGoogleInfo(GoogleUserInfo googleUserInfo, String fallbackUsername) {
+        // Try given name first (most personal) - same filtering as username
+        if (googleUserInfo.getGivenName() != null) {
+            String nickname = googleUserInfo.getGivenName().replaceAll("[^\\p{L}\\p{N}]","");
+            if (!nickname.isEmpty()) {
+                return nickname;
+            }
+        }
+        
+        // Try full name - same filtering as username
+        if (googleUserInfo.getName() != null) {
+            String nickname = googleUserInfo.getName().replaceAll("[^\\p{L}\\p{N}]","");
+            if (!nickname.isEmpty()) {
+                return nickname;
+            }
+        }
+        
+        // Fallback to username
+        return fallbackUsername;
     }
 
     private String ensureUniqueUsername(String baseUsername) {

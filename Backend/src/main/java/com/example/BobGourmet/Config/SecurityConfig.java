@@ -1,8 +1,18 @@
 package com.example.BobGourmet.Config;
 
+import com.example.BobGourmet.DTO.AuthDTO.GoogleUserInfo;
+import com.example.BobGourmet.Entity.User;
 import com.example.BobGourmet.Repository.UserRepository;
 import com.example.BobGourmet.Security.JwtAuthFilter;
+import com.example.BobGourmet.Service.OAuth2UserService;
 import com.example.BobGourmet.utils.JwtProvider;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService;
+import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.user.OAuth2User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -14,11 +24,21 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
+import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService;
+import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.io.IOException;
+import com.example.BobGourmet.DTO.AuthDTO.GoogleUserInfo;
+import com.example.BobGourmet.Entity.User;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -29,7 +49,9 @@ public class SecurityConfig {
 
 
     private final UserRepository userRepository;
-    
+    private final JwtProvider jwtProvider;
+    private final OAuth2UserService oAuth2UserService;
+
     @Value("${cors.allowed-origins:http://localhost:5173}")
     private String[] allowedOrigins;
 
@@ -57,13 +79,96 @@ public class SecurityConfig {
                 )
                 .oauth2Login(oauth2 -> oauth2
                         .loginPage(frontendBaseUrl) //Redirect unauthorized users here
-                        .defaultSuccessUrl(frontendBaseUrl+"/auth/callback",true)
-                        .failureUrl(frontendBaseUrl+"/auth/callback?error=oauth_failed")
+                        .userInfoEndpoint(userInfo -> userInfo
+                            .userService(customOAuth2UserService())
+                        )
+                        .successHandler(oauth2AuthenticationSuccessHandler())
+                        .failureHandler((request, response, exception) -> {
+                            System.err.println("=== OAuth FAILURE HANDLER ===");
+                            System.err.println("Exception: " + exception.getClass().getName());
+                            System.err.println("Message: " + exception.getMessage());
+                            exception.printStackTrace();
+                            response.sendRedirect(frontendBaseUrl+"/auth/callback?error=oauth_failed");
+                        })
                         .permitAll()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    @Bean
+    public DefaultOAuth2UserService customOAuth2UserService() {
+        return new DefaultOAuth2UserService() {
+            @Override
+            public OAuth2User loadUser(OAuth2UserRequest userRequest) throws OAuth2AuthenticationException {
+                OAuth2User oauth2User = super.loadUser(userRequest);
+                
+                // Process user and create in database
+                try {
+                    String email = oauth2User.getAttribute("email");
+                    String googleId = oauth2User.getAttribute("sub");
+                    String name = oauth2User.getAttribute("name");
+                    String givenName = oauth2User.getAttribute("given_name");
+                    
+                    GoogleUserInfo googleUserInfo = GoogleUserInfo.builder()
+                            .sub(googleId)
+                            .email(email)
+                            .name(name)
+                            .givenName(givenName)
+                            .build();
+                    
+                    // Use the existing service to find or create user
+                    User user = oAuth2UserService.findOrCreateUser(googleUserInfo);
+                    
+                    return oauth2User;
+                } catch (Exception e) {
+                    throw new OAuth2AuthenticationException(new OAuth2Error("user_creation_failed"), e);
+                }
+            }
+        };
+    }
+
+    @Bean
+    public AuthenticationSuccessHandler oauth2AuthenticationSuccessHandler() {
+        return new SimpleUrlAuthenticationSuccessHandler() {
+
+            @Override
+            public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
+                                                Authentication authentication) throws IOException {
+                OAuth2User oauth2User = (OAuth2User) authentication.getPrincipal();
+
+                try{
+                    String email = oauth2User.getAttribute("email");
+                    String googleId = oauth2User.getAttribute("sub");
+                    String name = oauth2User.getAttribute("name");
+                    String givenName = oauth2User.getAttribute("given_name");
+                    String familyName = oauth2User.getAttribute("family_name");
+                    String picture = oauth2User.getAttribute("picture");
+
+                    GoogleUserInfo googleUserInfo = GoogleUserInfo.builder()
+                            .sub(googleId)
+                            .email(email)
+                            .name(name)
+                            .givenName(givenName)
+                            .familyName(familyName)
+                            .picture(picture)
+                            .build();
+
+                    User user = SecurityConfig.this.oAuth2UserService.findOrCreateUser(googleUserInfo);
+                    String jwt = jwtProvider.generateToken(user.getUsername(), user.getNickname());
+
+                    String redirectUrl = frontendBaseUrl+"/auth/callback?token=" + jwt;
+                    response.sendRedirect(redirectUrl);
+                }catch(Exception e){
+                    // Also log to Spring's logger
+                    org.slf4j.LoggerFactory.getLogger(SecurityConfig.class)
+                        .error("OAuth Success Handler Error: {} - {}", e.getClass().getName(), e.getMessage(), e);
+                    
+                    response.sendRedirect(frontendBaseUrl+"/auth/callback?error=oauth_failed");
+                }
+            }
+        };
     }
 
     @Bean
