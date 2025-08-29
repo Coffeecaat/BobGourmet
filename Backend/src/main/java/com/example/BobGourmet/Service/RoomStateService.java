@@ -18,6 +18,13 @@ public class RoomStateService {
         matchRoomRepository.clearSubmittedMenus(roomId);
         matchRoomRepository.clearLastDrawResult(roomId);
     }
+    
+    // New method: Only change state to inputting without clearing data (for late joiners)
+    @Transactional
+    public void resumeMenuInput(String roomId){
+        matchRoomRepository.updateRoomState(roomId,"inputting");
+        // Don't clear submitted menus - preserve existing submissions for late joiners
+    }
 
     //changing room state to "submitted"
     @Transactional

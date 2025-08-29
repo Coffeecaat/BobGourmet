@@ -87,31 +87,6 @@ export const MenuSubmissionForm: React.FC = () => {
           )}
         </div>
         
-        {/* Show draw button here if host has submitted and all others have too */}
-        {menuStatus && 
-         Object.values(menuStatus.userSubmitStatus).filter(Boolean).length === currentRoom.users.length && 
-         user?.username === currentRoom.hostUsername && (
-          <div className="mt-8">
-            <div className="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-6 text-center">
-              <h3 className="text-xl font-bold text-yellow-800 mb-4">🎯 All Menus Submitted!</h3>
-              <p className="text-yellow-700 mb-6">All participants have submitted their menus. You can now start the selection process.</p>
-              <button
-                onClick={() => {
-                  if (currentRoom) {
-                    menuAPI.startDraw(currentRoom.roomId).then(() => {
-                      toast.success('Draw started!');
-                    }).catch((error) => {
-                      toast.error(error.response?.data?.message || 'Failed to start draw');
-                    });
-                  }
-                }}
-                className="bg-yellow-600 text-white py-3 px-8 rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
-              >
-                Start Menu Selection
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
