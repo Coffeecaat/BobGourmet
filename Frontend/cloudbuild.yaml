@@ -1,0 +1,35 @@
+steps:
+  # Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'build',
+      '-t', 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/bobgourmet-repo/bobgourmet-frontend:latest',
+      '--build-arg', 'VITE_API_BASE_URL=https://bobgourmet-backend-809552502995.asia-northeast3.run.app',
+      '--build-arg', 'VITE_WS_URL=wss://bobgourmet-backend-809552502995.asia-northeast3.run.app/ws-BobGourmet',
+      '.'
+    ]
+
+  # Push the Docker image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'push',
+      'asia-northeast3-docker.pkg.dev/$PROJECT_ID/bobgourmet-repo/bobgourmet-frontend:latest'
+    ]
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args: [
+      'run', 'deploy', 'bobgourmet-frontend',
+      '--image', 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/bobgourmet-repo/bobgourmet-frontend:latest',
+      '--region', 'asia-northeast3',
+      '--platform', 'managed',
+      '--allow-unauthenticated',
+      '--port', '80',
+      '--memory', '512Mi',
+      '--cpu', '1',
+      '--max-instances', '5'
+    ]
+
+images:
+  - 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/bobgourmet-repo/bobgourmet-frontend:latest'

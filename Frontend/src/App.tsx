@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { RoomProvider, useRoom } from './contexts/RoomContext';
 import { LoginForm } from './components/auth/LoginForm';
 import { SignupForm } from './components/auth/SignupForm';
+import { OAuthCallback } from './components/auth/OAuthCallback';
 import { CreateRoomForm } from './components/room/CreateRoomForm';
 import { RoomList } from './components/room/RoomList';
 import { RoomView } from './components/room/RoomView';
@@ -112,9 +113,15 @@ const UnauthenticatedApp: React.FC = () => {
 
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return <LoadingSpinner />;
+  }
+
+  // Handle OAuth callback route
+  if (location.pathname === '/auth/callback') {
+    return <OAuthCallback />;
   }
 
   return user ? <AuthenticatedApp /> : <UnauthenticatedApp />;
@@ -128,12 +135,16 @@ const App: React.FC = () => {
           <div className="App">
             <AppContent />
             <Toaster 
-              position="top-right"
+              position="top-center"
               toastOptions={{
-                duration: 4000,
+                // Remove duration from global config to let individual toasts control it
                 style: {
-                  background: '#363636',
-                  color: '#fff',
+                  fontSize: '14px',
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+                  maxWidth: '400px',
+                  zIndex: 9999,
                 },
               }}
             />

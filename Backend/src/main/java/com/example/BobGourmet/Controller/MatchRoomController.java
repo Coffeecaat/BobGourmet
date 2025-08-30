@@ -41,6 +41,21 @@ public class MatchRoomController {
         return ResponseEntity.ok(rooms);
     }
 
+    @Operation(summary = "방 정보 조회", description = "특정 방의 상세 정보 조회")
+    @GetMapping("/{roomId}")
+    public ResponseEntity<RoomDetails> getRoomInfo(@AuthenticationPrincipal UserDetails userDetails,
+                                                   @PathVariable String roomId) {
+        try {
+            RoomDetails roomDetails = matchroomService.buildRoomDetails(roomId);
+            return ResponseEntity.ok(roomDetails);
+        } catch (RoomException e) {
+            if (e.getMessage().contains("찾을 수 없습니다")) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+            }
+            throw e;
+        }
+    }
+
     @Operation(summary= "방 생성", description="새로운 매치룸 생성")
     @PostMapping
     public ResponseEntity<RoomDetails> createRoom(@AuthenticationPrincipal UserDetails userDetails,

@@ -67,6 +67,22 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(errorResponse, HttpStatus.FORBIDDEN);
     }
 
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<ErrorResponse> handleRuntimeException(RuntimeException ex){
+        log.warn("RuntimeException occurred: {}", ex.getMessage());
+        
+        // Handle specific validation errors
+        if(ex.getMessage().contains("already in use") || 
+           ex.getMessage().contains("is already in use")) {
+            ErrorResponse errorResponse = new ErrorResponse("Validation Error", ex.getMessage());
+            return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+        }
+        
+        // For other runtime exceptions, return generic error
+        ErrorResponse errorResponse = new ErrorResponse("Runtime Error", ex.getMessage());
+        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ResponseEntity<ErrorResponse> handleAllUncaughtException(Exception ex){

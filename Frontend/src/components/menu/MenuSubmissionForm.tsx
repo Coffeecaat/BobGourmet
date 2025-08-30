@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { useForm, useFieldArray } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { menuAPI } from '../../services/api';
 import { useRoom } from '../../contexts/RoomContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface MenuSubmissionData {
@@ -16,14 +15,10 @@ export const MenuSubmissionForm: React.FC = () => {
   const { user } = useAuth();
   const { register, control, handleSubmit, formState: { errors }, reset } = useForm<MenuSubmissionData>({
     defaultValues: {
-      menuItems: [{ value: '' }, { value: '' }, { value: '' }]
+      menuItems: [{ value: '' }, { value: '' }, { value: '' }, { value: '' }]
     }
   });
 
-  const { fields, append, remove } = useFieldArray({
-    control,
-    name: 'menuItems'
-  });
 
   // Check if current user has already submitted
   const hasUserSubmitted = menuStatus?.userSubmitStatus?.[user?.username || ''] || false;
@@ -92,31 +87,6 @@ export const MenuSubmissionForm: React.FC = () => {
           )}
         </div>
         
-        {/* Show draw button here if host has submitted and all others have too */}
-        {menuStatus && 
-         Object.values(menuStatus.userSubmitStatus).filter(Boolean).length === currentRoom.users.length && 
-         user?.username === currentRoom.hostUsername && (
-          <div className="mt-8">
-            <div className="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-6 text-center">
-              <h3 className="text-xl font-bold text-yellow-800 mb-4">🎯 All Menus Submitted!</h3>
-              <p className="text-yellow-700 mb-6">All participants have submitted their menus. You can now start the selection process.</p>
-              <button
-                onClick={() => {
-                  if (currentRoom) {
-                    menuAPI.startDraw(currentRoom.roomId).then(() => {
-                      toast.success('Draw started!');
-                    }).catch((error) => {
-                      toast.error(error.response?.data?.message || 'Failed to start draw');
-                    });
-                  }
-                }}
-                className="bg-yellow-600 text-white py-3 px-8 rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 font-semibold"
-              >
-                Start Menu Selection
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -135,8 +105,8 @@ export const MenuSubmissionForm: React.FC = () => {
       
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <div className="space-y-3">
-          {fields.map((field, index) => (
-            <div key={field.id} className="flex items-center space-x-2">
+          {[0, 1, 2, 3].map((index) => (
+            <div key={index} className="flex items-center space-x-2">
               <input
                 {...register(`menuItems.${index}.value` as const, {
                   maxLength: { value: 100, message: 'Menu item too long' }
@@ -145,15 +115,6 @@ export const MenuSubmissionForm: React.FC = () => {
                 className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder={`Menu item ${index + 1}`}
               />
-              {fields.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => remove(index)}
-                  className="p-2 text-red-600 hover:text-red-800"
-                >
-                  <Trash2 size={18} />
-                </button>
-              )}
             </div>
           ))}
           {errors.menuItems && (
@@ -161,16 +122,6 @@ export const MenuSubmissionForm: React.FC = () => {
           )}
         </div>
 
-        <div className="flex justify-center">
-          <button
-            type="button"
-            onClick={() => append({ value: '' })}
-            className="flex items-center space-x-2 text-blue-600 hover:text-blue-800"
-          >
-            <Plus size={18} />
-            <span>Add Menu Item</span>
-          </button>
-        </div>
 
         <button
           type="submit"

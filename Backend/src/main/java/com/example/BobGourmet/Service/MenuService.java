@@ -204,7 +204,7 @@ public class MenuService {
 
         private void broadcastMenuStatusUpdate(String roomId, MenuStatus menuStatus) {
         WebSocketMessage<MenuStatus> message = new WebSocketMessage<>("MENU_STATUS_UPDATE", menuStatus);
-        messagingTemplate.convertAndSend("/topic/room/" + roomId + "/menuStatus", menuStatus);
+        messagingTemplate.convertAndSend("/topic/room/" + roomId + "/menuStatus", message);
         log.debug("Broadcast menu status update for room {}", roomId);
         }
 
@@ -243,7 +243,16 @@ public class MenuService {
                     dislikedAndExcludedMenuKeys.add(menuName);
                 }
         });
-        Map<String,Boolean> userSubmitStatus = matchRoomRepository.getRoomSubmitStatus(roomId);
+        Map<String,Boolean> rawSubmitStatus = matchRoomRepository.getRoomSubmitStatus(roomId);
+        Map<String,Boolean> userSubmitStatus = new HashMap<>();
+        
+        // Ensure all current room users have a submit status entry (defaulting to false for new users)
+        if(allUsersInRoom != null) {
+            for(String user : allUsersInRoom){
+                userSubmitStatus.put(user, rawSubmitStatus.getOrDefault(user, false));
+            }
+        }
+        
         return new MenuStatus(submittedMenusByUsers, menuVotes,dislikedAndExcludedMenuKeys,userSubmitStatus);
 
         }

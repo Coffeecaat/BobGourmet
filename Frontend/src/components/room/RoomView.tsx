@@ -2,6 +2,7 @@ import React from 'react';
 import { useRoom } from '../../contexts/RoomContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { MenuSubmissionForm } from '../menu/MenuSubmissionForm';
+import { AllSubmittedMenus } from '../menu/AllSubmittedMenus';
 import { VotingInterface } from '../menu/VotingInterface';
 import { DrawResult } from '../menu/DrawResult';
 import { Users, Clock, Hash } from 'lucide-react';
@@ -114,68 +115,58 @@ export const RoomView: React.FC = () => {
           {(currentRoom.state === 'inputting' || currentRoom.state === 'submitted') && (
             <>
               <MenuSubmissionForm />
-              {/* Debug info for draw button */}
-              <div className="max-w-2xl mx-auto mt-4 p-4 bg-gray-100 rounded text-sm">
-                <strong>Debug Info:</strong><br/>
-                - Current user: {user?.username}<br/>
-                - Room host: {currentRoom.hostUsername}<br/>
-                - Is host: {user?.username === currentRoom.hostUsername ? 'Yes' : 'No'}<br/>
-                - Users count: {currentRoom.users.length}<br/>
-                - Participants count: {currentRoom.participants.length}<br/>
-                {menuStatus && (
-                  <>
-                    - MenuStatus submitted: {Object.values(menuStatus.userSubmitStatus).filter(Boolean).length} / {currentRoom.users.length}<br/>
-                    - All submitted (menuStatus): {Object.values(menuStatus.userSubmitStatus).filter(Boolean).length === currentRoom.users.length ? 'Yes' : 'No'}<br/>
-                  </>
-                )}
-                - Participants submitted: {currentRoom.participants.filter(p => p.submittedMenu).length} / {currentRoom.participants.length}<br/>
-                - All submitted (participants): {currentRoom.participants.length > 0 && currentRoom.participants.every(p => p.submittedMenu) ? 'Yes' : 'No'}<br/>
-                - Participants: {JSON.stringify(currentRoom.participants.map(p => ({ username: p.username, submitted: p.submittedMenu })))}
-              </div>
-              {/* Show start draw button only if host hasn't submitted yet and all others have */}
-              {!menuStatus?.userSubmitStatus?.[user?.username || ''] && 
-               menuStatus && 
-               Object.values(menuStatus.userSubmitStatus).filter(Boolean).length === currentRoom.users.length - 1 && 
-               user?.username === currentRoom.hostUsername && (
+              <AllSubmittedMenus />
+              {/* Single consolidated draw button for host */}
+              {user?.username === currentRoom.hostUsername && menuStatus && (
                 <div className="max-w-2xl mx-auto mt-8">
-                  <div className="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-6 text-center">
-                    <h3 className="text-xl font-bold text-yellow-800 mb-4">🎯 Others Have Submitted!</h3>
-                    <p className="text-yellow-700 mb-6">All other participants have submitted their menus. Submit yours to proceed with selection.</p>
-                  </div>
-                </div>
-              )}
-              
-              {/* Start draw button for host - shown after host submits menu */}
-              {user?.username === currentRoom.hostUsername && (
-                <div className="max-w-2xl mx-auto mt-4">
-                  {menuStatus?.userSubmitStatus?.[user?.username || ''] ? (
-                    // Host has submitted - show prominent start button
-                    <div className="bg-green-50 border-2 border-green-200 rounded-lg p-6 text-center">
-                      <h3 className="text-xl font-bold text-green-800 mb-4">🎯 Ready to Start Draw!</h3>
-                      <p className="text-green-700 mb-6">
-                        You've submitted your menu. You can start the draw now or wait for more participants.
-                      </p>
-                      <button
-                        onClick={startDraw}
-                        disabled={isLoading}
-                        className="bg-green-600 text-white py-3 px-8 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 font-semibold"
-                      >
-                        {isLoading ? 'Starting...' : 'Start Draw'}
-                      </button>
-                    </div>
-                  ) : (
-                    // Host hasn't submitted - show less prominent button for testing
-                    <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4 text-center">
-                      <p className="text-red-700 text-sm mb-3">Force Start (Host Only - For Testing)</p>
-                      <button
-                        onClick={startDraw}
-                        disabled={isLoading}
-                        className="bg-red-600 text-white py-2 px-6 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 text-sm"
-                      >
-                        {isLoading ? 'Starting...' : 'Force Start Draw'}
-                      </button>
-                    </div>
-                  )}
+                  {(() => {
+                    const hostHasSubmitted = menuStatus.userSubmitStatus[user?.username || ''] || false;
+                    const totalSubmitted = Object.values(menuStatus.userSubmitStatus).filter(Boolean).length;
+                    const allHaveSubmitted = totalSubmitted === currentRoom.users.length;
+                    
+                    if (hostHasSubmitted && allHaveSubmitted) {
+                      // All users including host have submitted - green prominent button
+                      return (
+                        <div className="bg-green-50 border-2 border-green-200 rounded-lg p-6 text-center">
+                          <h3 className="text-xl font-bold text-green-800 mb-4">🎯 All Menus Submitted!</h3>
+                          <p className="text-green-700 mb-6">Everyone has submitted their menus. Ready to start the draw!</p>
+                          <button
+                            onClick={startDraw}
+                            disabled={isLoading}
+                            className="bg-green-600 text-white py-3 px-8 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 font-semibold"
+                          >
+                            {isLoading ? 'Starting...' : 'Start Draw'}
+                          </button>
+                        </div>
+                      );
+                    } else if (hostHasSubmitted && !allHaveSubmitted) {
+                      // Host submitted but others haven't - blue waiting button
+                      return (
+                        <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-6 text-center">
+                          <h3 className="text-xl font-bold text-blue-800 mb-4">⏳ Waiting for Others</h3>
+                          <p className="text-blue-700 mb-4">
+                            {totalSubmitted}/{currentRoom.users.length} users have submitted. Waiting for remaining participants.
+                          </p>
+                          <button
+                            onClick={startDraw}
+                            disabled={isLoading}
+                            className="bg-blue-600 text-white py-2 px-6 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                          >
+                            {isLoading ? 'Starting...' : 'Start Draw Early'}
+                          </button>
+                        </div>
+                      );
+                    } else if (!hostHasSubmitted && totalSubmitted === currentRoom.users.length - 1) {
+                      // Host hasn't submitted but all others have - yellow prompt
+                      return (
+                        <div className="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-6 text-center">
+                          <h3 className="text-xl font-bold text-yellow-800 mb-4">🎯 Others Have Submitted!</h3>
+                          <p className="text-yellow-700 mb-6">All other participants have submitted their menus. Submit yours to proceed with selection.</p>
+                        </div>
+                      );
+                    }
+                    return null; // Don't show button for other cases
+                  })()}
                 </div>
               )}
             </>

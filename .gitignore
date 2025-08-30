@@ -1,0 +1,8 @@
+"env-vars.yaml" 
+"Backend/env-vars.yaml" 
+"**/env-vars.yaml" 
+"Backend/.env" 
+"Frontend/.env" 
+"**/.env" 
+"Backend/env-vars.yaml" 
+"env-vars.yaml" 
