@@ -1,4 +1,4 @@
-# 🍽️ BobGourmet - 실시간 메뉴 선택 서비
+# 🍽️ BobGourmet - 실시간 메뉴 선택 서비스
 
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.0-brightgreen)
 ![React](https://img.shields.io/badge/React-18-blue)
