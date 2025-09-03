@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '../../contexts/AuthContext';
 import { LoginRequest } from '../../types';
 import { GoogleOAuthButton } from './GoogleOAuthButton';
+import ResendVerification from './ResendVerification';
 
 interface LoginFormProps {
   onSwitchToSignup: () => void;
@@ -11,13 +12,28 @@ interface LoginFormProps {
 export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup }) => {
   const { login, isLoading } = useAuth();
   const { register, handleSubmit, formState: { errors } } = useForm<LoginRequest>();
+  const [showResendOption, setShowResendOption] = useState(false);
 
   const onSubmit = async (data: LoginRequest) => {
     try {
+      setShowResendOption(false); // Hide resend option on new login attempt
       await login(data);
-    } catch (error) {
-      // Error handling is done in AuthContext
+    } catch (error: any) {
+      // Check if the error is specifically about email verification
+      const errorMessage = error.response?.data?.message || '';
+      if (errorMessage.toLowerCase().includes('email verification') || 
+          errorMessage.includes('이메일 인증이 필요합니다')) {
+        setShowResendOption(true);
+      }
     }
+  };
+
+  const handleResendSuccess = () => {
+    setShowResendOption(false);
+  };
+
+  const handleResendCancel = () => {
+    setShowResendOption(false);
   };
 
   return (
@@ -63,6 +79,14 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup }) => {
           {isLoading ? 'Logging in...' : 'Login'}
         </button>
       </form>
+
+      {/* Email Verification Resend Section */}
+      {showResendOption && (
+        <ResendVerification 
+          onSuccess={handleResendSuccess}
+          onCancel={handleResendCancel}
+        />
+      )}
 
       <div className="mt-6">
         <div className="relative">
