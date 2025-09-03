@@ -3,6 +3,8 @@ package com.example.BobGourmet.Service;
 import com.example.BobGourmet.DTO.AuthDTO.SignupRequest;
 import com.example.BobGourmet.Entity.User;
 import com.example.BobGourmet.Repository.UserRepository;
+import com.example.BobGourmet.Service.EmailVerificationService;
+import com.example.BobGourmet.Service.EmailDomainValidationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -13,7 +15,12 @@ public class SignupService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final EmailVerificationService emailVerificationService;
+    private final EmailDomainValidationService emailDomainValidationService;
     public void signUp(SignupRequest request){
+        // Validate email domain first
+        emailDomainValidationService.validateEmailDomain(request.getEmail());
+        
         if(userRepository.findByUsername(request.getUsername()).isPresent()){
             throw new RuntimeException("Username is already in use");
         }
@@ -34,6 +41,12 @@ public class SignupService {
             request.getNickname()
         );
 
-        userRepository.save(user);
+        // Save user first to get the ID
+        user = userRepository.save(user);
+        
+        // Send verification email for local users
+        System.out.println("DEBUG: About to send verification email to: " + user.getEmail());
+        emailVerificationService.sendVerificationEmail(user);
+        System.out.println("DEBUG: Verification email service called successfully");
     }
 }

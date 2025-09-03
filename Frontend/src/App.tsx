@@ -7,6 +7,7 @@ import { RoomProvider, useRoom } from './contexts/RoomContext';
 import { LoginForm } from './components/auth/LoginForm';
 import { SignupForm } from './components/auth/SignupForm';
 import { OAuthCallback } from './components/auth/OAuthCallback';
+import EmailVerification from './components/auth/EmailVerification';
 import { CreateRoomForm } from './components/room/CreateRoomForm';
 import { RoomList } from './components/room/RoomList';
 import { RoomView } from './components/room/RoomView';
@@ -122,6 +123,11 @@ const AppContent: React.FC = () => {
   // Handle OAuth callback route
   if (location.pathname === '/auth/callback') {
     return <OAuthCallback />;
+  }
+
+  // Handle email verification route
+  if (location.pathname === '/verify-email') {
+    return <EmailVerification />;
   }
 
   return user ? <AuthenticatedApp /> : <UnauthenticatedApp />;

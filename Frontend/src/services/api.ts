@@ -72,6 +72,12 @@ export const authAPI = {
   
   signup: (data: SignupRequest): Promise<{ message: string }> =>
     api.post('/auth/register', data).then(res => ({ message: res.data })),
+  
+  verifyEmail: (token: string): Promise<{ message: string }> =>
+    api.get(`/auth/verify-email?token=${encodeURIComponent(token)}`).then(res => ({ message: res.data })),
+  
+  resendVerificationEmail: (email: string): Promise<{ message: string }> =>
+    api.post('/auth/resend-verification', { email }).then(res => ({ message: res.data })),
 };
 
 // Room endpoints
