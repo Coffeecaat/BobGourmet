@@ -3,6 +3,7 @@ package com.example.BobGourmet.Controller;
 import com.example.BobGourmet.DTO.AuthDTO.*;
 import com.example.BobGourmet.Entity.User;
 import com.example.BobGourmet.Exception.OAuth2Exception;
+import com.example.BobGourmet.Service.EmailVerificationService;
 import com.example.BobGourmet.Service.LoginService;
 import com.example.BobGourmet.Service.OAuth2UserService;
 import com.example.BobGourmet.Service.SignupService;
@@ -12,10 +13,9 @@ import org.springframework.http.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import jakarta.validation.Valid;
 
 
 
@@ -28,6 +28,7 @@ public class AuthController {
     private final SignupService signupService;
     private final OAuth2UserService oAuth2UserService;
     private final JwtProvider jwtProvider;
+    private final EmailVerificationService emailVerificationService;
 
     @PostMapping("/register")
     public ResponseEntity<String> register(@RequestBody SignupRequest request){
@@ -68,5 +69,36 @@ public class AuthController {
             return ResponseEntity.status(500).body(new AuthResponse(null));
         }
     }
+
+    @GetMapping("/verify-email")
+    public ResponseEntity<String> verifyEmail(@RequestParam("token") String token) {
+        try {
+            boolean verified = emailVerificationService.verifyEmail(token);
+            
+            if (verified) {
+                return ResponseEntity.ok("Email verified successfully! You can now login to BobGourmet.");
+            } else {
+                return ResponseEntity.badRequest()
+                    .body("Email verification failed. The token may be invalid or expired.");
+            }
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body("An error occurred during email verification.");
+        }
+    }
+
+    @PostMapping("/resend-verification")
+    public ResponseEntity<String> resendVerificationEmail(@RequestBody @Valid ResendVerificationRequest request) {
+        try {
+            emailVerificationService.resendVerificationEmail(request.getEmail());
+            return ResponseEntity.ok("Verification email sent successfully. Please check your inbox.");
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body("Failed to send verification email. Please try again later.");
+        }
+    }
+
 
 }
