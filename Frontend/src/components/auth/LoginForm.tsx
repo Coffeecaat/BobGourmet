@@ -126,17 +126,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup }) => {
         </div>
 
         <div className="mt-6">
-          <GoogleOAuthButton
-            onSuccess={(credential) => {
-              // Handle success if needed
-              console.log('Google OAuth success:', credential);
-            }}
-            onError={() => {
-              // Handle error if needed
-              console.error('Google OAuth error');
-            }}
-            disabled={isLoading}
-          />
+          <GoogleOAuthButton disabled={isLoading} />
         </div>
       </div>
 

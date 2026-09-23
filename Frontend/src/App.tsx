@@ -124,13 +124,10 @@ const UnauthenticatedApp: React.FC = () => {
 };
 
 const AppContent: React.FC = () => {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, authError, refreshUser } = useAuth();
   const location = useLocation();
 
-  if (isLoading) {
-    return <LoadingSpinner />;
-  }
-
+  // Render the callback immediately so URL credentials are stripped even while /me is pending.
   // Handle OAuth callback route
   if (location.pathname === '/auth/callback') {
     return <OAuthCallback />;
@@ -146,6 +143,17 @@ const AppContent: React.FC = () => {
     return <PreVerification />;
   }
 
+  if (isLoading) return <LoadingSpinner />;
+  if (authError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-4">
+        <p role="alert">{authError}</p>
+        <button type="button" onClick={() => { void refreshUser(); }} className="text-blue-600 underline">
+          로그인 상태 다시 확인
+        </button>
+      </div>
+    );
+  }
   return user ? <AuthenticatedApp /> : <UnauthenticatedApp />;
 };
 

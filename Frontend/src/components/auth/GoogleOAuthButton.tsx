@@ -1,8 +1,7 @@
 import React from 'react';
+import { googleLoginUrl } from '../../services/authNavigation';
 
 interface GoogleOAuthButtonProps {
-  onSuccess: (credential: string) => void;
-  onError: () => void;
   disabled?: boolean;
 }
 
@@ -12,8 +11,11 @@ export const GoogleOAuthButton: React.FC<GoogleOAuthButtonProps> = ({
 
   return (
     <button
-      disabled
-      title="백엔드 OAuth 쿠키 인증과 사용자 정보 조회 연동이 필요합니다."
+      type="button"
+      disabled={disabled}
+      onClick={() => {
+        if (!disabled) window.location.assign(googleLoginUrl(import.meta.env.VITE_API_BASE_URL));
+      }}
       className="w-full flex items-center justify-center px-4 py-2 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
     >
       <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
@@ -34,7 +36,7 @@ export const GoogleOAuthButton: React.FC<GoogleOAuthButtonProps> = ({
           d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
         />
       </svg>
-      {disabled ? 'Signing in...' : 'Google 로그인 준비 중 (인증 연동 필요)'}
+      {disabled ? 'Signing in...' : 'Google로 로그인'}
     </button>
   );
 };

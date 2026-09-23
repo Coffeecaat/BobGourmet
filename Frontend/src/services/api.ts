@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { AuthResponse, LoginRequest, SignupRequest, CreateRoomRequest, MenuSubmission, Room, MenuStatus } from '../types';
+import { AuthResponse, User, LoginRequest, SignupRequest, CreateRoomRequest, MenuSubmission, Room, MenuStatus } from '../types';
 import { normalizeRoom, normalizeMenuStatus } from './roomState';
 
 // Use relative URLs when served through proxy, absolute URLs for development
@@ -25,13 +25,12 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Check if this is a login error - don't redirect on login failures
-    const isLoginError = error.config?.url?.includes('/auth/login') ||
-                         error.config?.url?.includes('/auth/register') ||
-                         error.config?.url?.includes('/auth/oauth');
+    // Expected authentication failures are handled by their callers, not by a page redirect.
+    const isAuthRequest = ['/auth/login', '/auth/register', '/auth/me', '/auth/logout']
+      .includes(error.config?.url?.split('?')[0]);
 
     // A forbidden room/menu action does not mean the authentication cookie expired.
-    if (error.response?.status === 401 && !isLoginError) {
+    if (error.response?.status === 401 && !isAuthRequest) {
       // Cookie is expired or invalid (but not a login failure)
       localStorage.removeItem('user'); // Only remove user data, not token (it's in cookie)
       localStorage.removeItem('bobgourmet_current_room'); // Clear room state too
@@ -63,8 +62,8 @@ export const authAPI = {
   login: (data: LoginRequest): Promise<AuthResponse> =>
     api.post('/auth/login', data).then(res => res.data),
 
-  loginWithGoogle: (code: string, state?: string | null): Promise<AuthResponse> =>
-    api.post('/auth/oauth/google', { code, state }).then(res => res.data),
+  currentUser: (): Promise<User> =>
+    api.get<User>('/auth/me', { timeout: 10000 }).then(res => res.data),
 
   signup: (data: SignupRequest): Promise<{ message: string }> =>
     api.post('/auth/register', data).then(res => ({ message: res.data })),

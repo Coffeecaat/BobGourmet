@@ -9,6 +9,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // Google authorization and callback are owned by Spring Security.
+      '/oauth2': { target: 'http://localhost:8080', changeOrigin: true },
+      '/login/oauth2': { target: 'http://localhost:8080', changeOrigin: true },
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
