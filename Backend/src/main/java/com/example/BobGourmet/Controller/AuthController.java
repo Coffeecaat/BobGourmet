@@ -2,13 +2,11 @@ package com.example.BobGourmet.Controller;
 
 import com.example.BobGourmet.DTO.AuthDTO.*;
 import com.example.BobGourmet.Entity.User;
-import com.example.BobGourmet.Exception.OAuth2Exception;
+import com.example.BobGourmet.DTO.ErrorResponse;
 import com.example.BobGourmet.Service.Email.EmailVerificationService;
 import com.example.BobGourmet.Service.Auth.LoginService;
-import com.example.BobGourmet.Service.Auth.OAuth2UserService;
 import com.example.BobGourmet.Service.Auth.SignupService;
 import com.example.BobGourmet.Service.Security.IPTrackingService;
-import com.example.BobGourmet.utils.JwtProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
@@ -18,12 +16,9 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.Cookie;
 import jakarta.validation.Valid;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import io.github.resilience4j.ratelimiter.RequestNotPermitted;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 
 
 
@@ -35,8 +30,6 @@ public class AuthController {
 
     private final LoginService loginService;
     private final SignupService signupService;
-    private final OAuth2UserService oAuth2UserService;
-    private final JwtProvider jwtProvider;
     private final EmailVerificationService emailVerificationService;
     private final IPTrackingService ipTrackingService;
 
@@ -61,41 +54,21 @@ public class AuthController {
         return ResponseEntity.ok("User logged out successfully");
     }
 
+    // Explicit tombstone: legacy clients cannot bypass the OIDC authorization handshake.
     @PostMapping("/oauth/google")
-    public ResponseEntity<AuthResponse> handleGoogleOAuth(@RequestBody GoogleOAuthRequest request, HttpServletResponse response){
-
-        try{
-            if(request.getCode() == null || request.getCode().trim().isEmpty()){
-                return ResponseEntity.badRequest().body(new AuthResponse(null));
-            }
-
-            User user = oAuth2UserService.processGoogleOAuth(request.getCode());
-
-            String jwt = jwtProvider.generateToken(user.getUsername());
-            
-            // Set HttpOnly cookie for OAuth login as well
-            setJwtCookieInController(response, jwt);
-
-            return ResponseEntity.ok(new AuthResponse(null)); // Don't return token in body
-        }catch(OAuth2Exception e){
-            return ResponseEntity.badRequest().body(new AuthResponse(null));
-        }
-        catch(Exception e){
-            return ResponseEntity.status(500).body(new AuthResponse(null));
-        }
-    }
-    
-    // Helper method for OAuth (temporary until we move this to service layer too)
-    private void setJwtCookieInController(HttpServletResponse response, String token) {
-        Cookie jwtCookie = new Cookie("jwt-token", token);
-        jwtCookie.setHttpOnly(true);
-        jwtCookie.setSecure(true);
-        jwtCookie.setPath("/");
-        jwtCookie.setAttribute("SameSite", "None"); // Allow cross-origin cookies
-        jwtCookie.setMaxAge(24 * 60 * 60);
-        response.addCookie(jwtCookie);
+    public ResponseEntity<ErrorResponse> handleGoogleOAuth() {
+        return ResponseEntity.status(HttpStatus.GONE).body(new ErrorResponse(
+                "OAuth Endpoint Retired", "Start Google login at /oauth2/authorization/google"));
     }
 
+    @GetMapping("/me")
+    public ResponseEntity<CurrentUserResponse> currentUser(@AuthenticationPrincipal User user) {
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).cacheControl(CacheControl.noStore()).build();
+        }
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(new CurrentUserResponse(user.getUsername(), user.getEmail(), user.getNickname()));
+    }
 
     @PostMapping("/send-pre-verification")
     public ResponseEntity<String> sendPreVerificationEmail(@RequestParam("email") String email, HttpServletRequest httpRequest) {

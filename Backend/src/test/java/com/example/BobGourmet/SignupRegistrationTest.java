@@ -5,13 +5,11 @@ import com.example.BobGourmet.Entity.User;
 import com.example.BobGourmet.Exception.GlobalExceptionHandler;
 import com.example.BobGourmet.Repository.UserRepository;
 import com.example.BobGourmet.Service.Auth.LoginService;
-import com.example.BobGourmet.Service.Auth.OAuth2UserService;
 import com.example.BobGourmet.Service.Auth.SignupService;
 import com.example.BobGourmet.Service.Email.EmailDomainValidationService;
 import com.example.BobGourmet.Service.Email.EmailService;
 import com.example.BobGourmet.Service.Email.EmailVerificationService;
 import com.example.BobGourmet.Service.Security.IPTrackingService;
-import com.example.BobGourmet.utils.JwtProvider;
 import io.github.resilience4j.ratelimiter.RateLimiterConfig;
 import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
 import io.github.resilience4j.spring6.fallback.FallbackDecorators;
@@ -75,7 +73,7 @@ class SignupRegistrationTest {
         ReflectionTestUtils.setField(verification, "emailKeyPrefix", "test:verified:");
         SignupService signup = new SignupService(users, passwords, verification, domains, ipTracking);
         AuthController controller = new AuthController(mock(LoginService.class), signup,
-                mock(OAuth2UserService.class), mock(JwtProvider.class), verification, ipTracking);
+                verification, ipTracking);
 
         // Exercise the real @RateLimiter advice so domain failures cannot silently become HTTP 429.
         RateLimiterConfig config = RateLimiterConfig.custom().limitForPeriod(1)

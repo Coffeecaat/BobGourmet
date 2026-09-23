@@ -9,6 +9,7 @@ public class GoogleUserInfo {
 
     private String sub;     // Google's unique ID
     private String email;
+    private Boolean emailVerified;
     private String name;
     private String givenName;
     private String familyName;

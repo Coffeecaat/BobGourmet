@@ -5,45 +5,25 @@ import com.example.BobGourmet.Entity.User;
 import com.example.BobGourmet.Exception.OAuth2Exception;
 import com.example.BobGourmet.Exception.UserAlreadyExistsException;
 import com.example.BobGourmet.Repository.UserRepository;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.*;
-import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.util.StringUtils;
 
-import java.util.Map;
 import java.util.Optional;
 
 @Service
 public class OAuth2UserService {
     private final UserRepository userRepository;
 
-    @Value("${spring.security.oauth2.client.registration.google.client-id}")
-    private String googleClientId;
-
-    @Value("${spring.security.oauth2.client.registration.google.client-secret}")
-    private String googleClientSecret;
-
-    @Value("${spring.security.oauth2.client.registration.google.redirect-uri}")
-    private String redirectUri;
-
     public OAuth2UserService(UserRepository userRepository) {
         this.userRepository = userRepository;
     }
 
-    public User processGoogleOAuth(String code){
-        try{
-            OAuth2AccessToken accessToken = exchangeCodeForAccessToken(code);
-            GoogleUserInfo googleUserInfo = getUserInfoFromGoogle(accessToken.getTokenValue());
-            return findOrCreateUser(googleUserInfo);
-        }catch(Exception e){
-            throw new OAuth2Exception("Google OAuth authentication failed: " + e.getMessage());
-        }
-    }
-
     public User findOrCreateUser(GoogleUserInfo googleUserInfo) {
+        if (googleUserInfo == null || !StringUtils.hasText(googleUserInfo.getSub())
+                || !StringUtils.hasText(googleUserInfo.getEmail())
+                || !Boolean.TRUE.equals(googleUserInfo.getEmailVerified())) {
+            throw new OAuth2Exception("Verified Google identity is required");
+        }
         String email = googleUserInfo.getEmail();
         String googleId = googleUserInfo.getSub();
 
@@ -55,19 +35,9 @@ public class OAuth2UserService {
 
         // If already signed up using same email
         Optional<User> existingEmailUser = userRepository.findByEmail(email);
-        if(existingEmailUser.isPresent()) {
-            User user = existingEmailUser.get();
-
-            // If email is already used with local account
-            if("local".equals(user.getOauthProvider())){
-                throw new UserAlreadyExistsException("An account with this email already exists");
-            }
-
-            // If email is already used with another OAuth provider
-            if(!"google".equals(user.getOauthProvider())){
-                throw new UserAlreadyExistsException("An account with this provider already exists");
-            }
-            return user;
+        if (existingEmailUser.isPresent()) {
+            // Email is not a stable Google identity. Never link accounts by email alone.
+            throw new UserAlreadyExistsException("An account with this email already exists");
         }
 
         // Create new user
@@ -139,68 +109,4 @@ public class OAuth2UserService {
         return username;
     }
 
-    private OAuth2AccessToken exchangeCodeForAccessToken(String code){
-
-        //Use Spring's OAuth2 client to exchange code for token
-        RestTemplate restTemplate = new RestTemplate();
-
-        MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
-        params.add("client_id", googleClientId);
-        params.add("client_secret", googleClientSecret);
-        params.add("code", code);
-        params.add("grant_type", "authorization_code");
-        params.add("redirect_uri", redirectUri); // Must match Google console setting
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-
-        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(params, headers);
-
-        // Google's token endpoint
-        String tokenUrl = "https://oauth2.googleapis.com/token";
-
-        try{
-            ResponseEntity<Map> response = restTemplate.postForEntity(tokenUrl, request, Map.class);
-            Map<String,Object> responseBody = response.getBody();
-
-            return new OAuth2AccessToken(
-                    OAuth2AccessToken.TokenType.BEARER,
-                    (String) responseBody.get("access_token"),
-                    null, // issued at
-                    null          // expires at
-            );
-        }catch(Exception e){
-            throw new OAuth2Exception("Failed to exchange code for token: " + e.getMessage());
-        }
-    }
-
-    private GoogleUserInfo getUserInfoFromGoogle(String accessToken){
-        RestTemplate restTemplate = new RestTemplate();
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(accessToken);
-
-        HttpEntity<String> entity = new HttpEntity<>("", headers);
-
-        try{
-            ResponseEntity<Map> response = restTemplate.exchange(
-                    "https://www.googleapis.com/oauth2/v3/userinfo",
-                    HttpMethod.GET,
-                    entity,
-                    Map.class
-            );
-            Map<String, Object> userInfo = response.getBody();
-
-            return GoogleUserInfo.builder()
-                    .sub((String) userInfo.get("sub"))
-                    .email((String) userInfo.get("email"))
-                    .name((String) userInfo.get("name"))
-                    .givenName((String) userInfo.get("given_name"))
-                    .familyName((String) userInfo.get("family_name"))
-                    .picture((String) userInfo.get("picture"))
-                    .build();
-        }catch(Exception e){
-            throw new OAuth2Exception("Failed to get user info from Google: "+ e.getMessage());
-        }
-    }
 }

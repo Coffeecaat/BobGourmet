@@ -1,6 +1,11 @@
 package com.example.BobGourmet;
 
-import com.example.BobGourmet.Config.SecurityConfig;
+import com.example.BobGourmet.Service.Auth.GoogleOidcUserService;
+import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest;
+import org.springframework.security.oauth2.core.oidc.OidcIdToken;
+import java.util.Map;
+import java.util.List;
+import java.util.Set;
 import com.example.BobGourmet.DTO.AuthDTO.GoogleUserInfo;
 import com.example.BobGourmet.Entity.User;
 import com.example.BobGourmet.Repository.UserRepository;
@@ -18,7 +23,6 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService;
-import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2AccessToken;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
@@ -45,18 +49,19 @@ class OAuth2UserInfoLoaderTest {
     @Mock
     private OAuth2UserService users;
 
-    private DefaultOAuth2UserService loader;
-    private OAuth2UserRequest request;
+    private GoogleOidcUserService loader;
+    private OidcUserRequest request;
     private MockRestServiceServer server;
 
     @BeforeEach
     void setup() {
-        SecurityConfig config = new SecurityConfig(userRepository, jwtProvider, users);
-        loader = config.customOAuth2UserService();
+        loader = new GoogleOidcUserService(users);
+        DefaultOAuth2UserService userInfoLoader = new DefaultOAuth2UserService();
         RestTemplate restTemplate = new RestTemplate();
         server = MockRestServiceServer.bindTo(restTemplate).build();
         // Run the real loadUser method; replace only its external HTTP boundary.
-        loader.setRestOperations(restTemplate);
+        userInfoLoader.setRestOperations(restTemplate);
+        loader.setOauth2UserService(userInfoLoader);
         ClientRegistration registration = ClientRegistration.withRegistrationId("google")
                 .clientId("test-client").clientSecret("test-secret")
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
@@ -64,11 +69,14 @@ class OAuth2UserInfoLoaderTest {
                 .authorizationUri("https://provider.example/authorize")
                 .tokenUri("https://provider.example/token")
                 .userInfoUri(USER_INFO_URI).userNameAttributeName("sub")
-                .scope("profile", "email").build();
+                .scope("openid", "profile", "email").build();
         OAuth2AccessToken token = new OAuth2AccessToken(OAuth2AccessToken.TokenType.BEARER,
                 "test-access-token", Instant.parse("2026-01-01T00:00:00Z"),
-                Instant.parse("2026-01-01T01:00:00Z"));
-        request = new OAuth2UserRequest(registration, token);
+                Instant.parse("2026-01-01T01:00:00Z"), Set.of("openid", "profile", "email"));
+        OidcIdToken idToken = new OidcIdToken("test-id-token", Instant.parse("2026-01-01T00:00:00Z"),
+                Instant.parse("2026-01-01T01:00:00Z"),
+                Map.of("sub", "google123", "iss", "https://provider.example", "aud", List.of("test-client")));
+        request = new OidcUserRequest(registration, token, idToken);
     }
 
     @Test
@@ -111,7 +119,7 @@ class OAuth2UserInfoLoaderTest {
                 .andExpect(method(HttpMethod.GET))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer test-access-token"))
                 .andRespond(withSuccess("""
-                        {"sub":"google123","email":"test@example.com","name":"Test User","given_name":"Test"}
+                        {"sub":"google123","email":"test@example.com","name":"Test User","given_name":"Test","email_verified":true}
                         """, MediaType.APPLICATION_JSON));
     }
 
@@ -120,6 +128,7 @@ class OAuth2UserInfoLoaderTest {
         verify(users).findOrCreateUser(info.capture());
         assertEquals("google123", info.getValue().getSub());
         assertEquals("test@example.com", info.getValue().getEmail());
+        assertTrue(info.getValue().getEmailVerified());
         assertEquals("Test User", info.getValue().getName());
         assertEquals("Test", info.getValue().getGivenName());
         verifyNoMoreInteractions(users);

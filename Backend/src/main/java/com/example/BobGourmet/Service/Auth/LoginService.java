@@ -13,7 +13,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.Cookie;
+
 
 
 @Slf4j
@@ -26,7 +26,7 @@ public class LoginService {
     private final JwtProvider jwtProvider;
     private final MatchroomService matchroomService;
     private final EmailVerificationService emailVerificationService;
-    // private final RefreshTokenService refreshTokenService; // when using refresh token
+    private final JwtCookieService jwtCookieService;
 
     public AuthResponse login(LoginRequest request, HttpServletResponse response){
         User user = userRepository.findByUsername(request.getUsername())
@@ -44,7 +44,7 @@ public class LoginService {
         String accessToken = jwtProvider.generateToken(user.getUsername());
         
         // Set HttpOnly cookie for secure token storage
-        setJwtCookie(response, accessToken);
+        jwtCookieService.issue(response, accessToken);
         
         log.info("User logged in successfully: {}", user.getUsername());
         // Return response without token in body for security
@@ -60,29 +60,8 @@ public class LoginService {
         }
         
         // Clear JWT cookie
-        clearJwtCookie(response);
+        jwtCookieService.clear(response);
         log.info("User {} logout process initiated.", username);
     }
     
-    private void setJwtCookie(HttpServletResponse response, String token) {
-        Cookie jwtCookie = new Cookie("jwt-token", token);
-        jwtCookie.setHttpOnly(true);
-        jwtCookie.setSecure(true); // Only send over HTTPS in production
-        jwtCookie.setPath("/");
-        // Same-origin through proxy - can use Strict for better security
-        jwtCookie.setAttribute("SameSite", "Strict");
-        jwtCookie.setMaxAge(24 * 60 * 60); // 24 hours (match your JWT expiry)
-        response.addCookie(jwtCookie);
-    }
-    
-    private void clearJwtCookie(HttpServletResponse response) {
-        Cookie jwtCookie = new Cookie("jwt-token", "");
-        jwtCookie.setHttpOnly(true);
-        jwtCookie.setSecure(true);
-        jwtCookie.setPath("/");
-        jwtCookie.setAttribute("SameSite", "Strict"); // Match the setting used when creating
-        jwtCookie.setMaxAge(0); // Expire immediately
-        response.addCookie(jwtCookie);
-    }
-
 }
