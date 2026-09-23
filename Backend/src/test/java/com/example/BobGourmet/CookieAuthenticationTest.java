@@ -4,6 +4,8 @@ import com.example.BobGourmet.DTO.AuthDTO.LoginRequest;
 import com.example.BobGourmet.Entity.User;
 import com.example.BobGourmet.Repository.UserRepository;
 import com.example.BobGourmet.Service.Email.EmailVerificationService;
+import com.example.BobGourmet.Service.Room.MatchroomService;
+import com.example.BobGourmet.config.AuthSecurityTestConfiguration;
 import com.example.BobGourmet.utils.JwtProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureWebMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -27,6 +30,11 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.hamcrest.Matchers.containsString;
+import static org.springframework.security.test.web.servlet.response.SecurityMockMvcResultMatchers.unauthenticated;
+import static com.example.BobGourmet.config.AuthSecurityTestConfiguration.PROTECTED_PATH;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -35,6 +43,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureWebMvc
 @ActiveProfiles("test")
+@Import(AuthSecurityTestConfiguration.class)
 public class CookieAuthenticationTest {
 
     @Autowired
@@ -45,6 +54,10 @@ public class CookieAuthenticationTest {
 
     @MockitoBean
     private EmailVerificationService emailVerificationService;
+
+    // Logout's room cleanup is tested separately; authentication must not access local Redis.
+    @MockitoBean
+    private MatchroomService matchroomService;
 
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -97,6 +110,12 @@ public class CookieAuthenticationTest {
         // Verify response body doesn't contain token
         String responseBody = result.getResponse().getContentAsString();
         assertTrue(responseBody.contains("\"accessToken\":null") || !responseBody.contains("accessToken"));
+        Cookie jwtCookie = result.getResponse().getCookie("jwt-token");
+        assertNotNull(jwtCookie);
+        assertEquals("Strict", jwtCookie.getAttribute("SameSite"));
+        assertTrue(jwtProvider.validateToken(jwtCookie.getValue()));
+        assertEquals(username, jwtProvider.getUsernameFromToken(jwtCookie.getValue()));
+        verifyNoInteractions(matchroomService);
     }
 
     @Test
@@ -109,6 +128,7 @@ public class CookieAuthenticationTest {
         String email = "test@example.com";
         
         User mockUser = new User(username, email, passwordEncoder.encode(correctPassword), "Test User");
+        mockUser.setEmailVerified(true);
         when(userRepository.findByUsername(username)).thenReturn(Optional.of(mockUser));
         
         LoginRequest loginRequest = new LoginRequest();
@@ -119,8 +139,10 @@ public class CookieAuthenticationTest {
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginRequest)))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("Login Failed"))
                 .andExpect(cookie().doesNotExist("jwt-token"));
+        verifyNoInteractions(emailVerificationService, matchroomService);
     }
 
     @Test
@@ -137,26 +159,43 @@ public class CookieAuthenticationTest {
         String validToken = jwtProvider.generateToken(username);
 
         // When & Then
-        mockMvc.perform(get("/api/MatchRooms")
+        mockMvc.perform(get(PROTECTED_PATH)
                         .cookie(new Cookie("jwt-token", validToken)))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                // Stateless JWT authentication is not saved in a session for authenticated().
+                .andExpect(jsonPath("$.name").value(username))
+                .andExpect(jsonPath("$.authenticated").value(true));
+        verify(userRepository).findByUsername(username);
+
+        // A prior successful request must not authenticate subsequent requests.
+        mockMvc.perform(get(PROTECTED_PATH).cookie(new Cookie("jwt-token", "invalid-token")))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(unauthenticated());
+        mockMvc.perform(get(PROTECTED_PATH))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(unauthenticated());
+        verifyNoInteractions(matchroomService);
     }
 
     @Test
     @DisplayName("잘못된 JWT 쿠키로 보호된 리소스 접근 실패")
     void testProtectedResource_WithInvalidCookie_Failure() throws Exception {
         // When & Then
-        mockMvc.perform(get("/api/MatchRooms")
+        mockMvc.perform(get(PROTECTED_PATH)
                         .cookie(new Cookie("jwt-token", "invalid-token")))
-                .andExpect(status().is3xxRedirection());
+                .andExpect(status().is3xxRedirection())
+                .andExpect(unauthenticated());
+        verifyNoInteractions(userRepository, matchroomService);
     }
 
     @Test
     @DisplayName("JWT 쿠키 없이 보호된 리소스 접근 실패")
     void testProtectedResource_WithoutCookie_Failure() throws Exception {
         // When & Then
-        mockMvc.perform(get("/api/MatchRooms"))
-                .andExpect(status().is3xxRedirection());
+        mockMvc.perform(get(PROTECTED_PATH))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(unauthenticated());
+        verifyNoInteractions(userRepository, matchroomService);
     }
 
     @Test
@@ -173,12 +212,20 @@ public class CookieAuthenticationTest {
         String validToken = jwtProvider.generateToken(username);
 
         // When & Then
-        mockMvc.perform(post("/api/auth/logout")
+        MvcResult result = mockMvc.perform(post("/api/auth/logout")
                         .cookie(new Cookie("jwt-token", validToken)))
                 .andExpect(status().isOk())
                 .andExpect(cookie().exists("jwt-token"))
                 .andExpect(cookie().value("jwt-token", "")) // Empty value
-                .andExpect(cookie().maxAge("jwt-token", 0)); // Expired immediately
+                .andExpect(cookie().maxAge("jwt-token", 0)) // Expired immediately
+                .andExpect(cookie().httpOnly("jwt-token", true))
+                .andExpect(cookie().secure("jwt-token", true))
+                .andExpect(cookie().path("jwt-token", "/"))
+                .andReturn();
+        Cookie clearedCookie = result.getResponse().getCookie("jwt-token");
+        assertNotNull(clearedCookie);
+        assertEquals("Strict", clearedCookie.getAttribute("SameSite"));
+        verify(matchroomService).leaveRoom(username);
     }
 
     @Test
@@ -203,7 +250,11 @@ public class CookieAuthenticationTest {
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(loginRequest)))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error").value("Login Failed"))
+                .andExpect(jsonPath("$.message").value(containsString("Email verification required")))
                 .andExpect(cookie().doesNotExist("jwt-token"));
+        verify(emailVerificationService).isEmailVerified(mockUser);
+        verifyNoInteractions(matchroomService);
     }
 }
