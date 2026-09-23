@@ -11,7 +11,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -36,6 +39,12 @@ public class MenuServiceTest {
     @InjectMocks
     private MenuService menuService;
 
+    @Captor
+    private ArgumentCaptor<WebSocketMessage<MenuStatus>> statusMessageCaptor;
+
+    @Captor
+    private ArgumentCaptor<WebSocketMessage<Map<String, String>>> drawMessageCaptor;
+
     private String testRoomId;
     private String hostUsername;
     private String normalUsername;
@@ -55,6 +64,7 @@ public class MenuServiceTest {
     @Test
     @DisplayName("메뉴 제출 성공 - 마지막 제출자가 아닐 경우")
     void submitMenus_Success_NotLastSubmitter() {
+        allowRoomMember(hostUsername);
         // given
         SubmitMenuRequest request = new SubmitMenuRequest();
         request.setMenus(Arrays.asList("피자", "치킨"));
@@ -78,12 +88,13 @@ public class MenuServiceTest {
         assertNotNull(result.get("menuStatus"));
 
         // WebSocket 메시지가 전송되었는지 확인
-        verify(messagingTemplate, times(1)).convertAndSend(eq("/topic/room/" + testRoomId + "/menuStatus"), any(MenuStatus.class));
+        assertMenuStatusBroadcast(assertInstanceOf(MenuStatus.class, result.get("menuStatus")));
     }
 
     @Test
     @DisplayName("메뉴 제출 성공 - 마지막 제출자일 경우")
     void submitMenus_Success_LastSubmitter() {
+        allowRoomMember(hostUsername);
         // given
         SubmitMenuRequest request = new SubmitMenuRequest();
         request.setMenus(List.of("파스타"));
@@ -105,6 +116,7 @@ public class MenuServiceTest {
     @Test
     @DisplayName("메뉴 제출 실패 - 메뉴 개수 초과")
     void submitMenus_Fail_TooManyMenus() {
+        allowRoomMember(hostUsername);
         // given
         SubmitMenuRequest request = new SubmitMenuRequest();
         request.setMenus(Arrays.asList("1", "2", "3", "4", "5")); // 5개 제출
@@ -120,6 +132,7 @@ public class MenuServiceTest {
     @Test
     @DisplayName("메뉴 제출 실패 - 잘못된 방 상태")
     void submitMenus_Fail_InvalidRoomState() {
+        allowRoomMember(hostUsername);
         // given
         SubmitMenuRequest request = new SubmitMenuRequest();
         request.setMenus(List.of("김치찌개"));
@@ -138,6 +151,7 @@ public class MenuServiceTest {
     @Test
     @DisplayName("추첨 시작 성공")
     void startDraw_Success() {
+        allowRoomMember(hostUsername);
         // given
         // 1. 방 정보 설정
         roomDetails.put("state", "submitted");
@@ -164,15 +178,16 @@ public class MenuServiceTest {
         assertEquals("피자", result.get("selectedMenu"));
         assertNotNull(result.get("timestamp"));
 
-        ArgumentCaptor<WebSocketMessage> messageCaptor = ArgumentCaptor.forClass(WebSocketMessage.class);
-
         // WebSocket으로 추첨 결과가 전송되었는지 확인
-        verify(messagingTemplate, times(1)).convertAndSend(eq("/topic/room/" + testRoomId + "/events"), messageCaptor.capture());
+        verify(messagingTemplate).convertAndSend(eq("/topic/room/" + testRoomId + "/events"), drawMessageCaptor.capture());
+        assertEquals("draw_result", drawMessageCaptor.getValue().getType());
+        assertEquals(Map.of("selectedMenu", "피자"), drawMessageCaptor.getValue().getPayload());
     }
 
     @Test
     @DisplayName("추첨 시작 실패 - 호스트가 아님")
     void startDraw_Fail_NotHost() {
+        allowRoomMember(normalUsername);
         // given
         when(matchRoomRepository.getRoomDetailsMap(testRoomId)).thenReturn(roomDetails);
 
@@ -188,6 +203,7 @@ public class MenuServiceTest {
     @Test
     @DisplayName("추첨 시작 실패 - 추첨할 메뉴 없음")
     void startDraw_Fail_NoDrawableMenus() {
+        allowRoomMember(hostUsername);
         // given
         roomDetails.put("state", "submitted");
         when(matchRoomRepository.getRoomDetailsMap(testRoomId)).thenReturn(roomDetails);
@@ -209,6 +225,7 @@ public class MenuServiceTest {
     @Test
     @DisplayName("메뉴 추천 성공")
     void recommendMenu_Success() {
+        allowRoomMember(hostUsername);
         // given
         String menuKey = "피자";
         when(matchRoomRepository.getUserMenuQuota(testRoomId, hostUsername)).thenReturn(1); // 쿼터가 1 남음
@@ -224,12 +241,13 @@ public class MenuServiceTest {
         assertNotNull(result);
         verify(matchRoomRepository, times(1)).updateMenuVoteInfo(
                 eq(testRoomId), eq(menuKey),eq("recommenders"), eq(hostUsername), eq(true));
-        verify(messagingTemplate, times(1)).convertAndSend(anyString(), any(MenuStatus.class));
+        assertMenuStatusBroadcast(result);
     }
 
     @Test
     @DisplayName("메뉴 추천 실패 - 쿼터 없음")
     void recommendMenu_Fail_NoQuota() {
+        allowRoomMember(hostUsername);
         // given
         String menuKey = "피자";
         when(matchRoomRepository.getUserMenuQuota(testRoomId, hostUsername)).thenReturn(0); // 쿼터 없음
@@ -248,6 +266,7 @@ public class MenuServiceTest {
     @Test
     @DisplayName("메뉴 비추천 성공")
     void dislikeMenu_Success() {
+        allowRoomMember(hostUsername);
         // given
         String menuKey = "피자";
         // buildMenuStatus mocking
@@ -265,31 +284,39 @@ public class MenuServiceTest {
         verify(matchRoomRepository, times(1)).updateMenuDetailsField(
                 eq(testRoomId), eq(menuKey), eq("isExcluded"), eq(true));
         // WebSocket 메시지가 전송되었는지 확인
-        verify(messagingTemplate, times(1)).convertAndSend(anyString(), any(MenuStatus.class));
+        assertMenuStatusBroadcast(result);
     }
 
     @Test
     @DisplayName("재추첨 요청 성공 - 호스트")
     void resetDraw_Success_ByHost() {
+        allowRoomMember(hostUsername);
         // given
         when(matchRoomRepository.getRoomDetailsMap(testRoomId)).thenReturn(roomDetails);
+        when(matchRoomRepository.getRoomUsers(testRoomId)).thenReturn(Set.of(hostUsername, normalUsername));
 
         // when
-        // 이 메서드는 반환값이 없으므로, 예외가 발생하지 않는 것만으로도 성공을 의미합니다.
         assertDoesNotThrow(() -> {
             menuService.resetDraw(testRoomId, hostUsername);
         });
 
         // then
-        // 재추첨 로직이 Repository의 특정 메서드를 호출한다면, 그 호출을 verify 해야 합니다.
-        // 예를 들어, 아래와 같은 메서드가 있다고 가정. (현재는 없으므로 주석 처리)
-        // verify(matchRoomRepository, times(1)).clearLastDrawResult(testRoomId);
-        // verify(matchRoomRepository, times(1)).updateRoomState(testRoomId, "submitted");
+        verify(matchRoomRepository).clearSubmittedMenus(testRoomId);
+        verify(matchRoomRepository).clearLastDrawResult(testRoomId);
+        for (String username : Set.of(hostUsername, normalUsername)) {
+            verify(matchRoomRepository).updateUserSubmitStatus(testRoomId, username, false);
+            verify(matchRoomRepository).initUserMenuQuota(testRoomId, username, 4);
+        }
+        verify(messagingTemplate).convertAndSend(eq("/topic/room/" + testRoomId + "/menuStatus"), statusMessageCaptor.capture());
+        assertEquals("MENU_STATUS_UPDATE", statusMessageCaptor.getValue().getType());
+        assertEquals(Map.of(hostUsername, false, normalUsername, false),
+                statusMessageCaptor.getValue().getPayload().getUserSubmitStatus());
     }
 
     @Test
     @DisplayName("재추첨 요청 실패 - 호스트가 아님")
     void resetDraw_Fail_NotHost() {
+        allowRoomMember(normalUsername);
         // given
         when(matchRoomRepository.getRoomDetailsMap(testRoomId)).thenReturn(roomDetails);
 
@@ -299,6 +326,52 @@ public class MenuServiceTest {
         });
 
         assertEquals("호스트만 재추첨을 요청할 수 있습니다.", exception.getMessage());
+    }
+
+    @ParameterizedTest
+    @EnumSource(MenuAction.class)
+    void rejectsUserWithoutRoomBeforeAnyStateChange(MenuAction action) {
+        when(matchRoomRepository.findRoomIdByUser(hostUsername)).thenReturn(Optional.empty());
+        assertUnauthorizedWithoutSideEffects(action);
+    }
+
+    @ParameterizedTest
+    @EnumSource(MenuAction.class)
+    void rejectsUserInDifferentRoomBeforeAnyStateChange(MenuAction action) {
+        when(matchRoomRepository.findRoomIdByUser(hostUsername)).thenReturn(Optional.of("another-room"));
+        assertUnauthorizedWithoutSideEffects(action);
+    }
+
+    private void assertUnauthorizedWithoutSideEffects(MenuAction action) {
+        SubmitMenuRequest request = new SubmitMenuRequest();
+        request.setMenus(List.of("피자"));
+        SecurityException exception = assertThrows(SecurityException.class, () -> {
+            switch (action) {
+                case SUBMIT -> menuService.submitMenus(hostUsername, testRoomId, request);
+                case RECOMMEND -> menuService.recommendMenu(hostUsername, testRoomId, "피자");
+                case DISLIKE -> menuService.dislikeMenu(hostUsername, testRoomId, "피자");
+                case DRAW -> menuService.startDraw(hostUsername, testRoomId);
+                case RESET -> menuService.resetDraw(testRoomId, hostUsername);
+            }
+        });
+        assertEquals("User not authorized for this room", exception.getMessage());
+        verify(matchRoomRepository).findRoomIdByUser(hostUsername);
+        verifyNoMoreInteractions(matchRoomRepository);
+        verifyNoInteractions(messagingTemplate);
+    }
+
+    private void allowRoomMember(String username) {
+        when(matchRoomRepository.findRoomIdByUser(username)).thenReturn(Optional.of(testRoomId));
+    }
+
+    private void assertMenuStatusBroadcast(MenuStatus expected) {
+        verify(messagingTemplate).convertAndSend(eq("/topic/room/" + testRoomId + "/menuStatus"), statusMessageCaptor.capture());
+        assertEquals("MENU_STATUS_UPDATE", statusMessageCaptor.getValue().getType());
+        assertSame(expected, statusMessageCaptor.getValue().getPayload());
+    }
+
+    enum MenuAction {
+        SUBMIT, RECOMMEND, DISLIKE, DRAW, RESET
     }
 
     @Test
