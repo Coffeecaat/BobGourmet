@@ -5,7 +5,7 @@ import com.example.BobGourmet.DTO.AuthDTO.GoogleUserInfo;
 import com.example.BobGourmet.Entity.User;
 import com.example.BobGourmet.Exception.UserAlreadyExistsException;
 import com.example.BobGourmet.Repository.UserRepository;
-import com.example.BobGourmet.Service.OAuth2UserService;
+import com.example.BobGourmet.Service.Auth.OAuth2UserService;
 import com.example.BobGourmet.utils.JwtProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

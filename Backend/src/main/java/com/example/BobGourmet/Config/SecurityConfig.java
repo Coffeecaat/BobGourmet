@@ -4,7 +4,7 @@ import com.example.BobGourmet.DTO.AuthDTO.GoogleUserInfo;
 import com.example.BobGourmet.Entity.User;
 import com.example.BobGourmet.Repository.UserRepository;
 import com.example.BobGourmet.Security.JwtAuthFilter;
-import com.example.BobGourmet.Service.OAuth2UserService;
+import com.example.BobGourmet.Service.Auth.OAuth2UserService;
 import com.example.BobGourmet.utils.JwtProvider;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -27,18 +27,12 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService;
-import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
-import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
-import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.io.IOException;
-import com.example.BobGourmet.DTO.AuthDTO.GoogleUserInfo;
-import com.example.BobGourmet.Entity.User;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -69,6 +63,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/logout", "/api/auth/oauth/**",
                                 "/api/auth/verify-email", "/api/auth/resend-verification",
+                                "/api/auth/send-pre-verification", "/api/auth/verify-pre-verification", "/api/auth/check-pre-verification",
                                 "/oauth2/**", "/login/oauth2/**",
                                 "/swagger-ui/**",
                                 "/swagger-resources/**",
@@ -183,9 +178,9 @@ public class SecurityConfig {
 
         configuration.setAllowedOrigins(origins);
         configuration.setMaxAge(3600L); //preflight cache
-        configuration.setExposedHeaders(List.of("Authorization"));
+        configuration.setExposedHeaders(List.of("Authorization", "Location"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type"));
+        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Requested-With", "Cookie"));
 
         //allow credentials (such as cookies)
         configuration.setAllowCredentials(true);

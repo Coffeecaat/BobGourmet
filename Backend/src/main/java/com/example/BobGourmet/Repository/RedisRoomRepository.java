@@ -11,6 +11,8 @@ import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 
 import java.awt.*;
 import java.time.Instant;
@@ -24,6 +26,21 @@ public class RedisRoomRepository implements MatchRoomRepository{
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final StringRedisTemplate stringRedisTemplate;
+    private static final DefaultRedisScript<Long> SUBSCRIPTION_ACCESS_SCRIPT =
+            new DefaultRedisScript<>();
+
+    static {
+        SUBSCRIPTION_ACCESS_SCRIPT.setLocation(new ClassPathResource("redis/check_room_subscription.lua"));
+        SUBSCRIPTION_ACCESS_SCRIPT.setResultType(Long.class);
+    }
+
+    @Override
+    public boolean hasRoomSubscriptionAccess(String username, String roomId) {
+        Long result = stringRedisTemplate.execute(SUBSCRIPTION_ACCESS_SCRIPT,
+                List.of(getRoomDetailsKey(roomId), getRoomUsersKey(roomId), USER_LOCATIONS_HASH_KEY),
+                username, roomId);
+        return Long.valueOf(1).equals(result);
+    }
 
     public RedisRoomRepository(StringRedisTemplate stringRedisTemplate) {
         this.stringRedisTemplate = stringRedisTemplate;

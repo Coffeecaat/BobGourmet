@@ -1,4 +1,4 @@
-package com.example.BobGourmet.Service;
+package com.example.BobGourmet.Service.Room;
 
 import com.example.BobGourmet.DTO.RoomDTO.CreateRoomRequest;
 import com.example.BobGourmet.DTO.RoomDTO.JoinRoomRequest;
@@ -10,6 +10,7 @@ import com.example.BobGourmet.Entity.User;
 import com.example.BobGourmet.Exception.RoomException;
 import com.example.BobGourmet.Repository.MatchRoomRepository;
 import com.example.BobGourmet.Repository.UserRepository;
+import com.example.BobGourmet.Service.MenuService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

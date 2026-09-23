@@ -2,7 +2,7 @@ package com.example.BobGourmet;
 
 import com.example.BobGourmet.Entity.User;
 import com.example.BobGourmet.Repository.UserRepository;
-import com.example.BobGourmet.Service.OAuth2UserService;
+import com.example.BobGourmet.Service.Auth.OAuth2UserService;
 import com.example.BobGourmet.utils.JwtProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,12 +11,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureWebMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
+
 
 import java.util.Optional;
 
@@ -35,10 +36,10 @@ public class OAuth2SecurityIntegrationTest {
     @Autowired
     private WebApplicationContext context;
 
-    @MockBean
+    @MockitoBean
     private UserRepository userRepository;
 
-    @MockBean
+    @MockitoBean
     private OAuth2UserService oAuth2UserService;
 
     @Autowired
@@ -109,26 +110,26 @@ public class OAuth2SecurityIntegrationTest {
     }
 
     @Test
-    @DisplayName("JWT 토큰으로 보호된 리소스 접근 성공")
+    @DisplayName("JWT 쿠키로 보호된 리소스 접근 성공")
     @WithMockUser(username = "testuser")
-    void testProtectedResource_WithJwtToken_Success() throws Exception {
+    void testProtectedResource_WithJwtCookie_Success() throws Exception {
         // Given
         User mockUser = new User("testuser", "test@example.com", "Test User", "local", null);
         when(userRepository.findByUsername("testuser")).thenReturn(Optional.of(mockUser));
         
         String token = jwtProvider.generateToken("testuser");
 
-        // When & Then
+        // When & Then - Use cookie instead of Authorization header
         mockMvc.perform(get("/api/MatchRooms/test")
-                        .header("Authorization", "Bearer " + token))
+                        .cookie(new jakarta.servlet.http.Cookie("jwt-token", token)))
                 .andExpect(status().isOk());
     }
 
     @Test
-    @DisplayName("잘못된 JWT 토큰으로 접근 시 인증 실패")
-    void testProtectedResource_WithInvalidToken_AuthenticationFailure() throws Exception {
+    @DisplayName("잘못된 JWT 쿠키로 접근 시 인증 실패")
+    void testProtectedResource_WithInvalidCookie_AuthenticationFailure() throws Exception {
         mockMvc.perform(get("/api/MatchRooms/test")
-                        .header("Authorization", "Bearer invalid-token"))
+                        .cookie(new jakarta.servlet.http.Cookie("jwt-token", "invalid-token")))
                 .andExpect(status().is3xxRedirection());
     }
 

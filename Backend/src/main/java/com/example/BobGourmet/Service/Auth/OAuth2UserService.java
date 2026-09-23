@@ -1,4 +1,4 @@
-package com.example.BobGourmet.Service;
+package com.example.BobGourmet.Service.Auth;
 
 import com.example.BobGourmet.DTO.AuthDTO.GoogleUserInfo;
 import com.example.BobGourmet.Entity.User;
