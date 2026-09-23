@@ -142,6 +142,9 @@ SPRING_PROFILES_ACTIVE=prod ./gradlew bootRun
 
 ### Test Configuration
 - Integration tests use Testcontainers for Redis
+- Room subscription authorization scenarios run automatically in the standard Gradle `test` and `check` tasks via `RoomSubscriptionAccessIntegrationTest`; no separate PowerShell script is needed.
+- Docker must be available. These integration tests fail rather than skip when Docker cannot be started or discovered.
+- The subscription tests use a dedicated disposable Redis container and compare all Redis keys before/after the production repository call.
 - Unit tests mock Redis repository operations
 - Test configuration includes H2 database and embedded Redis
 
