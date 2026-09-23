@@ -1,22 +1,19 @@
 package com.example.BobGourmet.Config;
 
-import com.example.BobGourmet.DTO.AuthDTO.GoogleUserInfo;
-import com.example.BobGourmet.Entity.User;
 import com.example.BobGourmet.Repository.UserRepository;
 import com.example.BobGourmet.Security.JwtAuthFilter;
-import com.example.BobGourmet.Service.OAuth2UserService;
+import com.example.BobGourmet.Service.Auth.GoogleOidcUserService;
+import com.example.BobGourmet.Service.Auth.GoogleOidcUserService.LocalOidcUser;
+import com.example.BobGourmet.Service.Auth.JwtCookieService;
 import com.example.BobGourmet.utils.JwtProvider;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService;
-import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
-import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
-import org.springframework.security.oauth2.core.user.OAuth2User;
+import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -24,33 +21,33 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
-import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
+import org.springframework.security.web.authentication.DelegatingAuthenticationEntryPoint;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
+import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService;
-import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
+import org.springframework.security.web.util.matcher.RequestMatcher;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
-import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import java.io.IOException;
-import com.example.BobGourmet.DTO.AuthDTO.GoogleUserInfo;
-import com.example.BobGourmet.Entity.User;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.LinkedHashMap;
 
+@Slf4j
 @Configuration
 @RequiredArgsConstructor
 public class SecurityConfig {
-
-
     private final UserRepository userRepository;
     private final JwtProvider jwtProvider;
-    private final OAuth2UserService oAuth2UserService;
+    private final GoogleOidcUserService googleOidcUserService;
+    private final JwtCookieService jwtCookieService;
 
     @Value("${cors.allowed-origins:http://localhost:5173}")
     private String[] allowedOrigins;
@@ -59,117 +56,72 @@ public class SecurityConfig {
     private String frontendBaseUrl;
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtProvider jwtProvider, UserDetailsService userDetailsService) throws Exception {
-
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtProvider jwtProvider,
+                                                   UserDetailsService userDetailsService) throws Exception {
         JwtAuthFilter jwtAuthFilter = new JwtAuthFilter(jwtProvider, userDetailsService);
-        http
-                .csrf(csrf -> csrf.disable())
+        http.csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/logout", "/api/auth/oauth/**",
+                        .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/logout",
+                                "/api/auth/oauth/google",
                                 "/api/auth/verify-email", "/api/auth/resend-verification",
-                                "/oauth2/**", "/login/oauth2/**",
-                                "/swagger-ui/**",
-                                "/swagger-resources/**",
-                                "/webjars/**",
-                                "/v3/api-docs/**").permitAll()
-                        .requestMatchers("/ws-BobGourmet/**").permitAll()
-                        .requestMatchers("/api/MatchRooms/**").authenticated()
-                        .anyRequest().authenticated()
-                )
-                .oauth2Login(oauth2 -> oauth2
-                        .loginPage(frontendBaseUrl) //Redirect unauthorized users here
+                                "/api/auth/send-pre-verification", "/api/auth/verify-pre-verification",
+                                "/api/auth/check-pre-verification", "/oauth2/**", "/login/oauth2/**",
+                                "/swagger-ui/**", "/swagger-resources/**", "/webjars/**", "/v3/api-docs/**",
+                                "/ws-BobGourmet/**").permitAll()
+                        .anyRequest().authenticated())
+                .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(authenticationEntryPoint()))
+                .oauth2Login(oauth2 -> oauth2.loginPage(frontendBaseUrl)
                         .userInfoEndpoint(userInfo -> userInfo
-                            .userService(customOAuth2UserService())
-                        )
+                                .oidcUserService(googleOidcUserService)
+                                // Google login must use OIDC, never fall back to unverified OAuth attributes.
+                                .userService(request -> {
+                                    throw new OAuth2AuthenticationException(new OAuth2Error("oidc_required"));
+                                }))
                         .successHandler(oauth2AuthenticationSuccessHandler())
                         .failureHandler((request, response, exception) -> {
-                            System.err.println("=== OAuth FAILURE HANDLER ===");
-                            System.err.println("Exception: " + exception.getClass().getName());
-                            System.err.println("Message: " + exception.getMessage());
-                            exception.printStackTrace();
-                            response.sendRedirect(frontendBaseUrl+"/auth/callback?error=oauth_failed");
+                            endOAuthSession(request);
+                            String errorCode = exception instanceof OAuth2AuthenticationException oauthException
+                                    ? oauthException.getError().getErrorCode() : "authentication_failed";
+                            log.warn("Google login failed: {}", errorCode);
+                            response.sendRedirect(frontendBaseUrl + "/auth/callback?error=oauth_failed");
                         })
-                        .permitAll()
-                )
+                        .permitAll())
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
-
         return http.build();
     }
 
     @Bean
-    public DefaultOAuth2UserService customOAuth2UserService() {
-        return new DefaultOAuth2UserService() {
-            @Override
-            public OAuth2User loadUser(OAuth2UserRequest userRequest) throws OAuth2AuthenticationException {
-                OAuth2User oauth2User = super.loadUser(userRequest);
-                
-                // Process user and create in database
-                try {
-                    String email = oauth2User.getAttribute("email");
-                    String googleId = oauth2User.getAttribute("sub");
-                    String name = oauth2User.getAttribute("name");
-                    String givenName = oauth2User.getAttribute("given_name");
-                    
-                    GoogleUserInfo googleUserInfo = GoogleUserInfo.builder()
-                            .sub(googleId)
-                            .email(email)
-                            .name(name)
-                            .givenName(givenName)
-                            .build();
-                    
-                    // Use the existing service to find or create user
-                    User user = oAuth2UserService.findOrCreateUser(googleUserInfo);
-                    
-                    return oauth2User;
-                } catch (Exception e) {
-                    throw new OAuth2AuthenticationException(new OAuth2Error("user_creation_failed"), e);
-                }
+    public AuthenticationSuccessHandler oauth2AuthenticationSuccessHandler() {
+        return (request, response, authentication) -> {
+            endOAuthSession(request);
+            if (!(authentication.getPrincipal() instanceof LocalOidcUser user)) {
+                response.sendRedirect(frontendBaseUrl + "/auth/callback?error=oauth_failed");
+                return;
             }
+            String token = jwtProvider.generateToken(user.getLocalUsername(), user.getLocalNickname());
+            jwtCookieService.issue(response, token);
+            response.setHeader("Cache-Control", "no-store");
+            response.sendRedirect(frontendBaseUrl + "/auth/callback");
         };
     }
 
-    @Bean
-    public AuthenticationSuccessHandler oauth2AuthenticationSuccessHandler() {
-        return new SimpleUrlAuthenticationSuccessHandler() {
+    private AuthenticationEntryPoint authenticationEntryPoint() {
+        LinkedHashMap<RequestMatcher, AuthenticationEntryPoint> entryPoints = new LinkedHashMap<>();
+        entryPoints.put(PathPatternRequestMatcher.withDefaults().matcher("/api/auth/me"),
+                new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED));
+        DelegatingAuthenticationEntryPoint entryPoint = new DelegatingAuthenticationEntryPoint(entryPoints);
+        entryPoint.setDefaultEntryPoint(new LoginUrlAuthenticationEntryPoint(frontendBaseUrl));
+        return entryPoint;
+    }
 
-            @Override
-            public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response,
-                                                Authentication authentication) throws IOException {
-                OAuth2User oauth2User = (OAuth2User) authentication.getPrincipal();
-
-                try{
-                    String email = oauth2User.getAttribute("email");
-                    String googleId = oauth2User.getAttribute("sub");
-                    String name = oauth2User.getAttribute("name");
-                    String givenName = oauth2User.getAttribute("given_name");
-                    String familyName = oauth2User.getAttribute("family_name");
-                    String picture = oauth2User.getAttribute("picture");
-
-                    GoogleUserInfo googleUserInfo = GoogleUserInfo.builder()
-                            .sub(googleId)
-                            .email(email)
-                            .name(name)
-                            .givenName(givenName)
-                            .familyName(familyName)
-                            .picture(picture)
-                            .build();
-
-                    User user = SecurityConfig.this.oAuth2UserService.findOrCreateUser(googleUserInfo);
-                    String jwt = jwtProvider.generateToken(user.getUsername(), user.getNickname());
-
-                    String redirectUrl = frontendBaseUrl+"/auth/callback?token=" + jwt;
-                    response.sendRedirect(redirectUrl);
-                }catch(Exception e){
-                    // Also log to Spring's logger
-                    org.slf4j.LoggerFactory.getLogger(SecurityConfig.class)
-                        .error("OAuth Success Handler Error: {} - {}", e.getClass().getName(), e.getMessage(), e);
-                    
-                    response.sendRedirect(frontendBaseUrl+"/auth/callback?error=oauth_failed");
-                }
-            }
-        };
+    private void endOAuthSession(HttpServletRequest request) {
+        // The session stores only the temporary authorization handshake, not API authentication.
+        HttpSession session = request.getSession(false);
+        if (session != null) {
+            session.invalidate();
+        }
     }
 
     @Bean
@@ -183,9 +135,9 @@ public class SecurityConfig {
 
         configuration.setAllowedOrigins(origins);
         configuration.setMaxAge(3600L); //preflight cache
-        configuration.setExposedHeaders(List.of("Authorization"));
+        configuration.setExposedHeaders(List.of("Authorization", "Location"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type"));
+        configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Requested-With", "Cookie"));
 
         //allow credentials (such as cookies)
         configuration.setAllowCredentials(true);

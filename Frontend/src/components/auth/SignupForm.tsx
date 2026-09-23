@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '../../contexts/AuthContext';
 import { SignupRequest } from '../../types';
+import { authAPI } from '../../services/api';
+import toast from 'react-hot-toast';
 
 interface SignupFormProps {
   onSwitchToLogin: () => void;
@@ -18,6 +20,9 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin }) => {
   const { register, handleSubmit, formState: { errors }, watch, setValue } = useForm<SignupFormData>();
   const [allowedDomains, setAllowedDomains] = useState<string[]>([]);
   const [domainsLoading, setDomainsLoading] = useState(true);
+  const [preVerificationStatus, setPreVerificationStatus] = useState<'none' | 'sending' | 'sent' | 'verified'>('none');
+  const [sendingPreVerification, setSendingPreVerification] = useState(false);
+  const [checkingPreVerification, setCheckingPreVerification] = useState(false);
 
   const password = watch('password');
   const emailUsername = watch('emailUsername');
@@ -43,6 +48,52 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin }) => {
     setDomainsLoading(false);
   }, [setValue]);
 
+  const getFullEmail = () => {
+    if (emailUsername && emailDomain) {
+      return `${emailUsername}@${emailDomain}`;
+    }
+    return '';
+  };
+
+  const sendPreVerification = async () => {
+    const fullEmail = getFullEmail();
+    if (!fullEmail) {
+      toast.error('Please enter a valid email address first');
+      return;
+    }
+
+    setSendingPreVerification(true);
+    try {
+      await authAPI.sendPreVerification(fullEmail);
+      setPreVerificationStatus('sent');
+      toast.success('Pre-verification email sent! Check your inbox and click the link.');
+    } catch (error: any) {
+      toast.error(error.response?.data || 'Failed to send pre-verification email');
+    } finally {
+      setSendingPreVerification(false);
+    }
+  };
+
+  const checkPreVerificationStatus = async () => {
+    const fullEmail = getFullEmail();
+    if (!fullEmail) {
+      toast.error('Please enter a valid email address first');
+      return;
+    }
+
+    setCheckingPreVerification(true);
+    try {
+      await authAPI.checkPreVerification(fullEmail);
+      setPreVerificationStatus('verified');
+      toast.success('Email verified! You can now complete your signup.');
+    } catch (error: any) {
+      toast.error('Email not yet verified. Please check your inbox and click the verification link.');
+      setPreVerificationStatus('sent'); // Reset to sent status
+    } finally {
+      setCheckingPreVerification(false);
+    }
+  };
+
   const onSubmit = async (data: SignupFormData) => {
     try {
       // Combine email username and domain
@@ -54,10 +105,13 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin }) => {
         nickname: data.nickname,
         password: data.password 
       });
-      // Switch to login form after successful registration
+      
+      // Show success message and switch to login
+      toast.success('Account created successfully! You can now login.');
       onSwitchToLogin();
     } catch (error) {
-      // Error handling is done in AuthContext
+      // Stay on signup form - error handling is done in AuthContext with toast
+      // No redirect, user stays on signup page to fix issues
     }
   };
 
@@ -135,6 +189,55 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin }) => {
               Email: <span className="font-medium">{emailUsername}@{emailDomain}</span>
             </p>
           )}
+          
+          {/* Email verification section - Required for signup */}
+          {emailUsername && emailDomain && (
+            <div className="mt-2 space-y-2">
+              {preVerificationStatus === 'none' && (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={sendPreVerification}
+                    disabled={sendingPreVerification}
+                    className="px-3 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {sendingPreVerification ? 'Sending...' : 'Verify Email'}
+                  </button>
+                  <span className="text-xs text-red-600 flex items-center">
+                    ⚠️ Required: Verify email before signup
+                  </span>
+                </div>
+              )}
+              
+              {preVerificationStatus === 'sent' && (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={checkPreVerificationStatus}
+                    disabled={checkingPreVerification}
+                    className="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {checkingPreVerification ? 'Checking...' : 'Check Status'}
+                  </button>
+                  <span className="text-xs text-orange-600 flex items-center">
+                    📧 Check your inbox and click the verification link
+                  </span>
+                </div>
+              )}
+              
+              {preVerificationStatus === 'verified' && (
+                <div className="flex gap-2">
+                  <span className="px-3 py-1 text-xs bg-green-100 text-green-800 rounded font-medium">
+                    ✅ Verified
+                  </span>
+                  <span className="text-xs text-green-600 flex items-center">
+                    Email verified! Ready to complete signup.
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+          
           {!domainsLoading && allowedDomains.length > 0 && (
             <p className="text-blue-600 text-xs mt-1">
               Only verified email domains are allowed for security
@@ -199,7 +302,7 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin }) => {
 
         <button
           type="submit"
-          disabled={isLoading || domainsLoading}
+          disabled={isLoading || domainsLoading || preVerificationStatus !== 'verified'}
           className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {isLoading ? (
@@ -212,6 +315,8 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin }) => {
             </span>
           ) : domainsLoading ? (
             'Loading Email Options...'
+          ) : preVerificationStatus !== 'verified' ? (
+            'Verify Email First'
           ) : (
             'Sign Up'
           )}
@@ -220,7 +325,9 @@ export const SignupForm: React.FC<SignupFormProps> = ({ onSwitchToLogin }) => {
 
       <div className="mt-4 p-3 bg-blue-50 rounded-md border border-blue-200">
         <p className="text-blue-800 text-xs text-center">
-          📧 After signing up, check your email for a verification link before logging in
+          {preVerificationStatus === 'verified' 
+            ? '🎉 Email verified! You can signup and login immediately.'
+            : '📧 Please verify your email address above before completing signup.'}
         </p>
       </div>
 

@@ -11,6 +11,8 @@ public interface MatchRoomRepository {
 
     Optional<String> findRoomIdByUser(String username);
 
+    boolean hasRoomSubscriptionAccess(String username, String roomId);
+
     void saveLastDrawResult(String roomId, String menu, long timestamp);
 
     Optional<String> getLastDrawResult(String roomId);

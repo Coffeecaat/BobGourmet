@@ -1,4 +1,4 @@
-package com.example.BobGourmet.Service;
+package com.example.BobGourmet.Service.Room;
 
 import com.example.BobGourmet.Repository.MatchRoomRepository;
 import jakarta.transaction.Transactional;

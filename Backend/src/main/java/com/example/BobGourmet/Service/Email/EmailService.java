@@ -1,4 +1,4 @@
-package com.example.BobGourmet.Service;
+package com.example.BobGourmet.Service.Email;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 public class EmailService {
 
     private final JavaMailSender mailSender;
+    private final EmailDomainValidationService emailDomainValidationService;
     
     @Value("${app.mail.from:noreply@bobgourmet.com}")
     private String fromEmail;
@@ -25,8 +26,7 @@ public class EmailService {
 
     public void sendVerificationEmail(String to, String username, String verificationToken) {
         try {
-            System.out.println("DEBUG: EmailService.sendVerificationEmail called");
-            System.out.println("DEBUG: to=" + to + ", username=" + username + ", activeProfile=" + activeProfile);
+            emailDomainValidationService.validateEmailDomain(to);
             
             // In development, just log the email content instead of sending
             if ("dev".equals(activeProfile)) {
@@ -128,5 +128,65 @@ public class EmailService {
         
         log.info("📧 [DEV] Verification email would be sent to: {}", to);
         log.info("🔗 [DEV] Verification link: {}", verificationUrl);
+    }
+    
+    public void sendPreVerificationEmail(String to, String verificationToken) {
+        try {
+            // In development, just log the email content instead of sending
+            if ("dev".equals(activeProfile)) {
+                logPreVerificationEmailInDev(to, verificationToken);
+                return;
+            }
+            
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom("BobGourmet@noreply.com");
+            message.setTo(to);
+            message.setSubject("BobGourmet - Email Pre-Verification");
+            
+            String verificationUrl = frontendUrl + "/verify-pre-verification?token=" + verificationToken;
+            
+            String emailContent = String.format(
+                "Hello,\n\n" +
+                "You're almost ready to sign up for BobGourmet!\n\n" +
+                "To complete your email verification, please click the link below:\n\n" +
+                "%s\n\n" +
+                "This verification link will expire in 1 hour for security reasons.\n\n" +
+                "After verification, you can return to the signup form to complete your registration.\n\n" +
+                "If you didn't request this verification, please ignore this email.\n\n" +
+                "The BobGourmet Developer Coffeecat\n\n" +
+
+                "안녕하세요,\n\n" +
+                "BobGourmet 회원가입을 위한 이메일 인증을 진행해 주세요!\n\n" +
+                "아래의 링크를 클릭하여 이메일 인증을 완료해 주시기 바랍니다:\n\n" +
+                "%s\n\n" +
+                "해당 인증 링크는 보안 상의 이유로 1시간 이내에 만료됩니다.\n\n" +
+                "인증 완료 후, 회원가입 폼으로 돌아가서 가입을 완료하실 수 있습니다.\n\n" +
+                "혹시 해당 인증을 요청하지 않으셨다면 이 이메일을 무시하셔도 됩니다.\n\n" +
+                "BobGourmet 개발자 Coffeecat 올림",
+                verificationUrl, verificationUrl
+            );
+            
+            message.setText(emailContent);
+            
+            mailSender.send(message);
+            log.info("Pre-verification email sent successfully to: {}", to);
+            
+        } catch (Exception e) {
+            log.error("Failed to send pre-verification email to: {}", to, e);
+            throw new RuntimeException("Failed to send pre-verification email", e);
+        }
+    }
+    
+    private void logPreVerificationEmailInDev(String to, String verificationToken) {
+        String verificationUrl = frontendUrl + "/verify-pre-verification?token=" + verificationToken;
+        
+        log.info("=== PRE-VERIFICATION EMAIL (DEV MODE) ===");
+        log.info("To: {}", to);
+        log.info("Pre-Verification URL: {}", verificationUrl);
+        log.info("Token: {}", verificationToken);
+        log.info("==========================================");
+        
+        log.info("📧 [DEV] Pre-verification email would be sent to: {}", to);
+        log.info("🔗 [DEV] Pre-verification link: {}", verificationUrl);
     }
 }

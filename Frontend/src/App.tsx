@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -8,6 +8,7 @@ import { LoginForm } from './components/auth/LoginForm';
 import { SignupForm } from './components/auth/SignupForm';
 import { OAuthCallback } from './components/auth/OAuthCallback';
 import EmailVerification from './components/auth/EmailVerification';
+import PreVerification from './components/auth/PreVerification';
 import { CreateRoomForm } from './components/room/CreateRoomForm';
 import { RoomList } from './components/room/RoomList';
 import { RoomView } from './components/room/RoomView';
@@ -92,7 +93,17 @@ const AuthenticatedApp: React.FC = () => {
 };
 
 const UnauthenticatedApp: React.FC = () => {
+  const location = useLocation();
   const [isLogin, setIsLogin] = useState(true);
+
+  // Check for tab parameter in URL (for pre-verification redirect)
+  React.useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const tab = searchParams.get('tab');
+    if (tab === 'signup') {
+      setIsLogin(false);
+    }
+  }, [location.search]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -113,13 +124,10 @@ const UnauthenticatedApp: React.FC = () => {
 };
 
 const AppContent: React.FC = () => {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, authError, refreshUser } = useAuth();
   const location = useLocation();
 
-  if (isLoading) {
-    return <LoadingSpinner />;
-  }
-
+  // Render the callback immediately so URL credentials are stripped even while /me is pending.
   // Handle OAuth callback route
   if (location.pathname === '/auth/callback') {
     return <OAuthCallback />;
@@ -130,6 +138,22 @@ const AppContent: React.FC = () => {
     return <EmailVerification />;
   }
 
+  // Handle pre-verification route
+  if (location.pathname === '/verify-pre-verification') {
+    return <PreVerification />;
+  }
+
+  if (isLoading) return <LoadingSpinner />;
+  if (authError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 px-4">
+        <p role="alert">{authError}</p>
+        <button type="button" onClick={() => { void refreshUser(); }} className="text-blue-600 underline">
+          로그인 상태 다시 확인
+        </button>
+      </div>
+    );
+  }
   return user ? <AuthenticatedApp /> : <UnauthenticatedApp />;
 };
 

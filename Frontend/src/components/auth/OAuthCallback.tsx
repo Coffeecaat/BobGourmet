@@ -1,90 +1,36 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Link, Navigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
-import toast from 'react-hot-toast';
+import { oauthCallbackIssue } from '../../services/authNavigation';
+import { LoadingSpinner } from '../common/LoadingSpinner';
 
 export const OAuthCallback: React.FC = () => {
-  const { loginWithOAuth } = useAuth();
-  const navigate = useNavigate();
+  const { user, isLoading, authError, refreshUser } = useAuth();
+  const [issue] = useState(() => oauthCallbackIssue(window.location.search));
 
   useEffect(() => {
-    const handleOAuthCallback = async () => {
-      try {
-        // Get URL parameters
-        const urlParams = new URLSearchParams(window.location.search);
-        const token = urlParams.get('token');
-        const error = urlParams.get('error');
+    // Strip old credentials/errors from history without trusting them as identity or redirect URLs.
+    window.history.replaceState(window.history.state, '', '/auth/callback');
+    try { localStorage.removeItem('oauth_redirect_url'); } catch { /* Storage can be disabled. */ }
+  }, []);
 
-        if (error) {
-          console.error('OAuth error:', error);
-          toast.error('Google login failed');
-          navigate('/');
-          return;
-        }
+  if (!issue && isLoading) return <LoadingSpinner />;
+  if (!issue && user) return <Navigate to="/" replace />;
 
-        if (token) {
-          // Backend has already processed OAuth and returned JWT token
-          console.log('Received OAuth token:', token.substring(0, 20) + '...');
-          
-          // Decode token to get user info
-          try {
-            if (token.split('.').length !== 3) {
-              throw new Error('Invalid JWT format');
-            }
-            const payload = JSON.parse(atob(token.split('.')[1]));
-            console.log('Decoded JWT payload:', payload);
-            const user = {
-              username: payload.sub,
-              email: payload.email || ''
-            };
-            
-            // Store in localStorage
-            localStorage.setItem('token', token);
-            localStorage.setItem('user', JSON.stringify(user));
-            
-            // Trigger a page reload to update AuthContext
-            toast.success('Google login successful!', {
-              duration: 2000,
-            });
-            
-            // Wait a bit for the toast then reload to update AuthContext
-            setTimeout(() => {
-              window.location.href = localStorage.getItem('oauth_redirect_url') || '/';
-              localStorage.removeItem('oauth_redirect_url');
-            }, 1000);
-            
-          } catch (err) {
-            console.error('Could not decode token for user info:', err);
-            toast.error('Invalid authentication token');
-            navigate('/');
-            return;
-          }
-        } else {
-          // No token received, redirect to home
-          navigate('/');
-        }
-      } catch (error) {
-        console.error('OAuth callback error:', error);
-        toast.error('Authentication failed');
-        navigate('/');
-      }
-    };
-
-    handleOAuthCallback();
-  }, [navigate]);
+  const message: string = issue === 'provider'
+    ? 'Google 인증이 취소되었거나 서버에서 로그인을 완료하지 못했습니다.'
+    : issue === 'legacy'
+      ? '이전 방식의 로그인 링크는 사용할 수 없습니다. Google 로그인을 다시 시작해주세요.'
+      : authError || '로그인 쿠키를 확인하지 못했습니다. Google 로그인을 다시 시작해주세요.';
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-md w-full space-y-8 p-8">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <h2 className="mt-6 text-lg font-medium text-gray-900">
-            Completing Google Sign In...
-          </h2>
-          <p className="mt-2 text-sm text-gray-600">
-            Please wait while we verify your account.
-          </p>
-        </div>
+      <div className="max-w-md bg-white rounded-lg shadow p-8 text-center">
+        <h2 className="text-lg font-semibold mb-4">Google 로그인을 완료할 수 없습니다.</h2>
+        <p role="alert" className="text-gray-600 mb-6">{message}</p>
+        {!issue && <button type="button" onClick={() => { void refreshUser(); }}
+          className="block mx-auto mb-4 text-blue-600 underline">로그인 상태 다시 확인</button>}
+        <Link to="/" className="text-blue-600 underline">홈으로 돌아가기</Link>
       </div>
     </div>
   );

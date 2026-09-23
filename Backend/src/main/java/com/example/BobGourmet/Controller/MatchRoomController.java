@@ -1,14 +1,14 @@
 package com.example.BobGourmet.Controller;
 
-import com.example.BobGourmet.DTO.MenuDTO.MenuStatus;
+import com.example.BobGourmet.DTO.MenuDTO.MenuStatus;   
 import com.example.BobGourmet.DTO.MenuDTO.SubmitMenuRequest;
 import com.example.BobGourmet.DTO.RoomDTO.CreateRoomRequest;
 import com.example.BobGourmet.DTO.RoomDTO.JoinRoomRequest;
 import com.example.BobGourmet.DTO.RoomDTO.RoomDetails;
 import com.example.BobGourmet.Exception.RoomException;
-import com.example.BobGourmet.Service.MatchroomService;
+import com.example.BobGourmet.Service.Room.MatchroomService;
 import com.example.BobGourmet.Service.MenuService;
-import com.example.BobGourmet.Service.RoomStateService;
+import com.example.BobGourmet.Service.Room.RoomStateService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +22,6 @@ import io.swagger.v3.oas.annotations.Operation;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 @Tag(name= "MatchRooms", description="매치룸 관련 API")
 @Slf4j
