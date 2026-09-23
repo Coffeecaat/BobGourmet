@@ -700,8 +700,8 @@ public class RedisRoomRepository implements MatchRoomRepository{
         String menuDetailsJson = stringRedisTemplate.<String,String>opsForHash().get(getRoomSubmittedMenusKey(roomId), menuKey);
         if(menuDetailsJson != null){
             try{
-                Map<String,Object> menuDetails = objectMapper.readValue(menuDetailsJson, new TypeReference<Map<String, Object>>() {});
-                return (Boolean) menuDetails.getOrDefault("isExcluded", false);
+                MenuVoteDetails menuDetails = objectMapper.readValue(menuDetailsJson, MenuVoteDetails.class);
+                return menuDetails.isExcluded();
             }catch(Exception e){
                 log.error("Error checking if menu {} is excluded in room {}: {}", menuKey, roomId, e.getMessage());
             }

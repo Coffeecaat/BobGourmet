@@ -2,40 +2,38 @@ package com.example.BobGourmet;
 
 import com.example.BobGourmet.DTO.MenuDTO.SubmitMenuRequest;
 import com.example.BobGourmet.Repository.MatchRoomRepository;
+import com.example.BobGourmet.Repository.RedisRoomRepository;
 import com.example.BobGourmet.Service.MenuService;
+import com.example.BobGourmet.config.IsolatedRedisTestConfiguration;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.ActiveProfiles;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@Testcontainers // 1. Testcontainers 활성화
 @SpringBootTest
+@ActiveProfiles("test")
+@Import(IsolatedRedisTestConfiguration.class)
 class MenuServiceIntegrationTest {
 
-    // 2. 재사용 가능한 Redis 컨테이너 정의
-    @Container
-    static GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
-            .withExposedPorts(6379);
-
-    // 3. 동적으로 Redis 연결 정보를 스프링에 주입
-    @DynamicPropertySource
-    static void redisProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.data.redis.host", redis::getHost);
-        registry.add("spring.data.redis.port", () -> redis.getMappedPort(6379).toString());
-    }
+    @Autowired
+    private GenericContainer<?> isolatedRedis;
 
     @Autowired
     private MenuService menuService;
@@ -46,12 +44,19 @@ class MenuServiceIntegrationTest {
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
-    // BeforeEach/AfterEach 로직은 크게 변경할 필요 없음
-    // 다만, 매 테스트마다 데이터를 확실히 초기화하기 위해 flushAll을 사용
+    @BeforeEach
     @AfterEach
-    void tearDown() {
-        // 각 테스트 후 Redis 데이터 정리
-        stringRedisTemplate.getConnectionFactory().getConnection().flushAll();
+    void clearDedicatedRedisDatabase() {
+        // Check the actual connection before deleting data; never clear local/application Redis.
+        assertInstanceOf(LettuceConnectionFactory.class, stringRedisTemplate.getConnectionFactory());
+        LettuceConnectionFactory factory = (LettuceConnectionFactory) stringRedisTemplate.getConnectionFactory();
+        assertEquals(isolatedRedis.getHost(), factory.getHostName());
+        assertEquals(isolatedRedis.getMappedPort(6379).intValue(), factory.getPort());
+        assertEquals(0, factory.getDatabase());
+        stringRedisTemplate.execute((RedisCallback<Void>) connection -> {
+            connection.serverCommands().flushDb();
+            return null;
+        });
     }
 
     @Test
@@ -62,11 +67,13 @@ class MenuServiceIntegrationTest {
         String hostUser = "host1";
         String user2 = "user2";
 
-        matchRoomRepository.createRoomAtomically(
+        long createResult = matchRoomRepository.createRoomAtomically(
                 testRoomId, "테스트방", hostUser, "127.0.0.1", 8080,
                 4, false, null, "호스트닉네임"
         );
-        matchRoomRepository.tryJoinRoomAtomically(testRoomId, user2, "127.0.0.1", 8081);
+        assertEquals(RedisRoomRepository.JOIN_SUCCESS, createResult);
+        long joinResult = matchRoomRepository.tryJoinRoomAtomically(testRoomId, user2, "127.0.0.1", 8081);
+        assertEquals(RedisRoomRepository.JOIN_SUCCESS, joinResult);
 
         // when:
         // 1. 메뉴 제출 (두 명 모두)
@@ -98,5 +105,32 @@ class MenuServiceIntegrationTest {
         // 참고: startDraw가 추첨 결과를 Redis에 저장한다면, 아래 검증 추가
         // assertTrue(matchRoomRepository.getLastDrawResult(testRoomId).isPresent());
         // assertEquals("피자", matchRoomRepository.getLastDrawResult(testRoomId).get());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void exclusionLookupMatchesPersistedMenuDetails(boolean excluded) throws Exception {
+        String roomId = "exclusion-round-trip";
+        String menuKey = "피자";
+        matchRoomRepository.saveSubmittedMenus(roomId, "host", List.of(menuKey));
+        matchRoomRepository.markMenuAsExcluded(roomId, menuKey, excluded);
+
+        String key = "room:" + roomId + ":submitted_menus";
+        String stored = stringRedisTemplate.<String, String>opsForHash().get(key, menuKey);
+        assertNotNull(stored);
+        JsonNode json = new ObjectMapper().readTree(stored);
+        assertTrue(json.has("excluded"));
+        assertEquals(excluded, json.get("excluded").booleanValue());
+        assertEquals(excluded, matchRoomRepository.getAllSubmittedMenusWithDetails(roomId).get(menuKey).isExcluded());
+        assertEquals(excluded, matchRoomRepository.isMenuExcluded(roomId, menuKey));
+        assertEquals(List.of(menuKey), matchRoomRepository.getSubmittedMenus(roomId, "host"));
+
+        matchRoomRepository.markMenuAsExcluded(roomId, menuKey, !excluded);
+        assertEquals(!excluded, matchRoomRepository.isMenuExcluded(roomId, menuKey));
+    }
+
+    @Test
+    void missingMenuIsNotExcluded() {
+        assertFalse(matchRoomRepository.isMenuExcluded("missing-room", "missing-menu"));
     }
 }
