@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -8,6 +8,7 @@ import { LoginForm } from './components/auth/LoginForm';
 import { SignupForm } from './components/auth/SignupForm';
 import { OAuthCallback } from './components/auth/OAuthCallback';
 import EmailVerification from './components/auth/EmailVerification';
+import PreVerification from './components/auth/PreVerification';
 import { CreateRoomForm } from './components/room/CreateRoomForm';
 import { RoomList } from './components/room/RoomList';
 import { RoomView } from './components/room/RoomView';
@@ -92,7 +93,17 @@ const AuthenticatedApp: React.FC = () => {
 };
 
 const UnauthenticatedApp: React.FC = () => {
+  const location = useLocation();
   const [isLogin, setIsLogin] = useState(true);
+
+  // Check for tab parameter in URL (for pre-verification redirect)
+  React.useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const tab = searchParams.get('tab');
+    if (tab === 'signup') {
+      setIsLogin(false);
+    }
+  }, [location.search]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -128,6 +139,11 @@ const AppContent: React.FC = () => {
   // Handle email verification route
   if (location.pathname === '/verify-email') {
     return <EmailVerification />;
+  }
+
+  // Handle pre-verification route
+  if (location.pathname === '/verify-pre-verification') {
+    return <PreVerification />;
   }
 
   return user ? <AuthenticatedApp /> : <UnauthenticatedApp />;

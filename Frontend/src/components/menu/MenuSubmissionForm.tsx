@@ -11,9 +11,9 @@ interface MenuSubmissionData {
 
 export const MenuSubmissionForm: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { currentRoom, menuStatus } = useRoom();
+  const { currentRoom, menuStatus, updateMenuStatus } = useRoom();
   const { user } = useAuth();
-  const { register, control, handleSubmit, formState: { errors }, reset } = useForm<MenuSubmissionData>({
+  const { register, handleSubmit, formState: { errors }, reset } = useForm<MenuSubmissionData>({
     defaultValues: {
       menuItems: [{ value: '' }, { value: '' }, { value: '' }, { value: '' }]
     }
@@ -35,7 +35,7 @@ export const MenuSubmissionForm: React.FC = () => {
       return;
     }
 
-    const menuItems = data.menuItems.map(item => item.value).filter(item => item.trim() !== '');
+    const menuItems = [...new Set(data.menuItems.map(item => item.value.trim()).filter(Boolean))];
     
     if (menuItems.length === 0) {
       toast.error('Please add at least one menu item');
@@ -50,7 +50,7 @@ export const MenuSubmissionForm: React.FC = () => {
     try {
       setIsSubmitting(true);
       const response = await menuAPI.submitMenu(currentRoom.roomId, { menus: menuItems });
-      console.log('Menu submission response:', response);
+      updateMenuStatus(currentRoom.roomId, response);
       toast.success('Menu submitted successfully!');
       reset();
     } catch (error: any) {

@@ -1,45 +1,41 @@
 import axios from 'axios';
-import { AuthResponse, LoginRequest, SignupRequest, CreateRoomRequest, MenuSubmission } from '../types';
+import { AuthResponse, LoginRequest, SignupRequest, CreateRoomRequest, MenuSubmission, Room, MenuStatus } from '../types';
+import { normalizeRoom, normalizeMenuStatus } from './roomState';
 
-const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL ? `${(import.meta as any).env.VITE_API_BASE_URL}/api` : 'https://bobgourmet-backend-j5uigawfda-du.a.run.app/api';
+// Use relative URLs when served through proxy, absolute URLs for development
+const API_BASE = import.meta.env.VITE_API_BASE_URL
+  ? `${import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '')}/api` : '/api';
 
 const api = axios.create({
   baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // Include cookies in requests
 });
 
-// Add token to requests (except auth endpoints)
+// Cookie-based authentication - no need to add Authorization headers
+// HttpOnly cookies are automatically sent by the browser
 api.interceptors.request.use((config) => {
-  // Don't add token to authentication endpoints
-  const authEndpoints = ['/auth/login', '/auth/register', '/auth/oauth'];
-  const isAuthEndpoint = authEndpoints.some(endpoint => config.url?.includes(endpoint));
-  
-  if (!isAuthEndpoint) {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-  }
+  // No Authorization header needed - cookies are sent automatically
   return config;
 });
 
-// Response interceptor to handle token expiration
+// Response interceptor to handle authentication errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     // Check if this is a login error - don't redirect on login failures
-    const isLoginError = error.config?.url?.includes('/auth/login') || 
+    const isLoginError = error.config?.url?.includes('/auth/login') ||
                          error.config?.url?.includes('/auth/register') ||
                          error.config?.url?.includes('/auth/oauth');
-    
-    if ((error.response?.status === 401 || error.response?.status === 403) && !isLoginError) {
-      // Token is expired or invalid (but not a login failure)
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+
+    // A forbidden room/menu action does not mean the authentication cookie expired.
+    if (error.response?.status === 401 && !isLoginError) {
+      // Cookie is expired or invalid (but not a login failure)
+      localStorage.removeItem('user'); // Only remove user data, not token (it's in cookie)
       localStorage.removeItem('bobgourmet_current_room'); // Clear room state too
-      
+
       // Show toast message before redirect
       if (typeof window !== 'undefined') {
         // Use dynamic import to avoid dependency issues
@@ -52,7 +48,7 @@ api.interceptors.response.use(
           console.warn('Session expired. Please login again.');
         });
       }
-      
+
       // Small delay to allow toast to show before redirect
       setTimeout(() => {
         window.location.href = '/';
@@ -66,52 +62,69 @@ api.interceptors.response.use(
 export const authAPI = {
   login: (data: LoginRequest): Promise<AuthResponse> =>
     api.post('/auth/login', data).then(res => res.data),
-  
+
   loginWithGoogle: (code: string, state?: string | null): Promise<AuthResponse> =>
     api.post('/auth/oauth/google', { code, state }).then(res => res.data),
-  
+
   signup: (data: SignupRequest): Promise<{ message: string }> =>
     api.post('/auth/register', data).then(res => ({ message: res.data })),
-  
+
   verifyEmail: (token: string): Promise<{ message: string }> =>
     api.get(`/auth/verify-email?token=${encodeURIComponent(token)}`).then(res => ({ message: res.data })),
-  
+
   resendVerificationEmail: (email: string): Promise<{ message: string }> =>
     api.post('/auth/resend-verification', { email }).then(res => ({ message: res.data })),
+
+  resendVerificationByUsername: (username: string): Promise<{ message: string }> =>
+    api.post('/auth/resend-verification', { username }).then(res => ({ message: res.data })),
+
+  sendPreVerification: (email: string): Promise<{ message: string }> =>
+    api.post(`/auth/send-pre-verification?email=${encodeURIComponent(email)}`).then(res => ({ message: res.data })),
+
+  verifyPreVerification: (token: string): Promise<{ message: string }> =>
+    api.get(`/auth/verify-pre-verification?token=${encodeURIComponent(token)}`).then(res => ({ message: res.data })),
+
+  checkPreVerification: (email: string): Promise<{ message: string }> =>
+    api.get(`/auth/check-pre-verification?email=${encodeURIComponent(email)}`).then(res => ({ message: res.data })),
+
+  logout: (): Promise<{ message: string }> =>
+    api.post('/auth/logout').then(res => ({ message: res.data })),
 };
 
 // Room endpoints
 export const roomAPI = {
-  getAllActiveRooms: () =>
-    api.get('/MatchRooms').then(res => res.data),
+  getAllActiveRooms: (): Promise<Room[]> =>
+    api.get<Room[]>('/MatchRooms').then(res => res.data.map(normalizeRoom)),
 
-  createRoom: (data: CreateRoomRequest) =>
-    api.post('/MatchRooms', data).then(res => res.data),
-  
-  joinRoom: (roomId: string, password?: string) =>
-    api.post(`/MatchRooms/${roomId}/join`, password ? { password } : {}).then(res => res.data),
-  
+  createRoom: (data: CreateRoomRequest): Promise<Room> =>
+    api.post<Room>('/MatchRooms', {
+      roomName: data.roomName, maxUsers: data.maxUsers, private: data.isPrivate, password: data.password,
+    }).then(res => normalizeRoom(res.data)),
+
+  joinRoom: (roomId: string, password?: string): Promise<Room> =>
+    api.post<Room>(`/MatchRooms/${roomId}/join`, password ? { password } : {}).then(res => normalizeRoom(res.data)),
+
   leaveRoom: (roomId: string) =>
     api.post(`/MatchRooms/${roomId}/leave`).then(res => res.data),
-  
-  getRoomInfo: (roomId: string) =>
-    api.get(`/MatchRooms/${roomId}`).then(res => res.data),
+
+  getRoomInfo: (roomId: string): Promise<Room> =>
+    api.get<Room>(`/MatchRooms/${roomId}`).then(res => normalizeRoom(res.data)),
 };
 
 // Menu endpoints
 export const menuAPI = {
-  submitMenu: (roomId: string, data: MenuSubmission) =>
-    api.post(`/MatchRooms/${roomId}/menus`, data).then(res => res.data),
-  
-  recommendMenu: (roomId: string, menuKey: string) =>
-    api.post(`/MatchRooms/${roomId}/menus/${menuKey}/recommend`).then(res => res.data),
-  
-  dislikeMenu: (roomId: string, menuKey: string) =>
-    api.post(`/MatchRooms/${roomId}/menus/${menuKey}/dislike`).then(res => res.data),
-  
-  startDraw: (roomId: string) =>
-    api.post(`/MatchRooms/${roomId}/start-draw`).then(res => res.data),
-  
-  resetRoom: (roomId: string) =>
-    api.post(`/MatchRooms/${roomId}/reset`).then(res => res.data),
+  submitMenu: (roomId: string, data: MenuSubmission): Promise<MenuStatus> =>
+    api.post<MenuStatus>(`/MatchRooms/${roomId}/menus`, data).then(res => normalizeMenuStatus(res.data)),
+
+  recommendMenu: (roomId: string, menuKey: string): Promise<MenuStatus> =>
+    api.post<MenuStatus>(`/MatchRooms/${roomId}/menus/${encodeURIComponent(menuKey)}/recommend`).then(res => normalizeMenuStatus(res.data)),
+
+  dislikeMenu: (roomId: string, menuKey: string): Promise<MenuStatus> =>
+    api.post<MenuStatus>(`/MatchRooms/${roomId}/menus/${encodeURIComponent(menuKey)}/dislike`).then(res => normalizeMenuStatus(res.data)),
+
+  startDraw: (roomId: string): Promise<Room> =>
+    api.post<Room>(`/MatchRooms/${roomId}/start-draw`).then(res => normalizeRoom(res.data)),
+
+  resetRoom: (roomId: string): Promise<Room> =>
+    api.post<Room>(`/MatchRooms/${roomId}/reset`).then(res => normalizeRoom(res.data)),
 };

@@ -8,7 +8,7 @@ import { DrawResult } from '../menu/DrawResult';
 import { Users, Clock, Hash } from 'lucide-react';
 
 export const RoomView: React.FC = () => {
-  const { currentRoom, drawResult, menus, menuStatus, leaveRoom, startDraw, isLoading } = useRoom();
+  const { currentRoom, drawResult, menuStatus, leaveRoom, startDraw, isLoading } = useRoom();
   const { user } = useAuth();
 
   if (!currentRoom) {
@@ -21,8 +21,8 @@ export const RoomView: React.FC = () => {
         return 'Waiting for users';
       case 'inputting':
         return 'Menu submission phase';
-      case 'started':
-        return 'Voting phase';
+      case 'submitted':
+        return 'Ready to draw';
       case 'result_viewing':
         return 'Results';
       default:
@@ -36,7 +36,7 @@ export const RoomView: React.FC = () => {
         return 'bg-yellow-100 text-yellow-800';
       case 'inputting':
         return 'bg-blue-100 text-blue-800';
-      case 'started':
+      case 'submitted':
         return 'bg-green-100 text-green-800';
       case 'result_viewing':
         return 'bg-purple-100 text-purple-800';
@@ -112,17 +112,18 @@ export const RoomView: React.FC = () => {
             </div>
           )}
 
-          {(currentRoom.state === 'inputting' || currentRoom.state === 'submitted') && (
+          {['waiting', 'inputting', 'submitted'].includes(currentRoom.state) && (
             <>
               <MenuSubmissionForm />
               <AllSubmittedMenus />
+              <VotingInterface />
               {/* Single consolidated draw button for host */}
               {user?.username === currentRoom.hostUsername && menuStatus && (
                 <div className="max-w-2xl mx-auto mt-8">
                   {(() => {
                     const hostHasSubmitted = menuStatus.userSubmitStatus[user?.username || ''] || false;
-                    const totalSubmitted = Object.values(menuStatus.userSubmitStatus).filter(Boolean).length;
-                    const allHaveSubmitted = totalSubmitted === currentRoom.users.length;
+                    const totalSubmitted = currentRoom.users.filter(name => menuStatus.userSubmitStatus[name]).length;
+                    const allHaveSubmitted = currentRoom.users.length > 0 && totalSubmitted === currentRoom.users.length;
                     
                     if (hostHasSubmitted && allHaveSubmitted) {
                       // All users including host have submitted - green prominent button
@@ -148,11 +149,10 @@ export const RoomView: React.FC = () => {
                             {totalSubmitted}/{currentRoom.users.length} users have submitted. Waiting for remaining participants.
                           </p>
                           <button
-                            onClick={startDraw}
-                            disabled={isLoading}
+                            disabled
                             className="bg-blue-600 text-white py-2 px-6 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                           >
-                            {isLoading ? 'Starting...' : 'Start Draw Early'}
+                            Waiting for all participants
                           </button>
                         </div>
                       );
@@ -172,12 +172,11 @@ export const RoomView: React.FC = () => {
             </>
           )}
 
-          {currentRoom.state === 'started' && (
-            <VotingInterface menus={menus} />
-          )}
-
           {currentRoom.state === 'result_viewing' && drawResult && (
             <DrawResult result={drawResult} />
+          )}
+          {currentRoom.state === 'result_viewing' && !drawResult && (
+            <p className="text-center text-gray-600">추첨은 완료되었지만 결과 메시지를 받지 못했습니다. 현재 서버는 결과 재조회 API를 제공하지 않습니다.</p>
           )}
         </div>
       </div>

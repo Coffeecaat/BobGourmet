@@ -17,8 +17,7 @@ export interface SignupRequest {
 }
 
 export interface AuthResponse {
-  accessToken: string;
-  user?: User;
+  accessToken: string | null;
 }
 
 export interface CreateRoomRequest {
@@ -81,7 +80,8 @@ export interface DrawResult {
   selectedUser: string;
 }
 
-export interface WebSocketMessage {
-  type: 'ROOM_STATE_UPDATE' | 'PARTICIPANT_UPDATE' | 'MENU_STATUS_UPDATE' | 'draw_result';
-  payload: any;
-}
+export type WebSocketMessage = { roomId?: string } & (
+  | { type: 'ROOM_STATE_UPDATE'; payload: Room }
+  | { type: 'PARTICIPANT_UPDATE'; payload: Participant[] }
+  | { type: 'MENU_STATUS_UPDATE'; payload: MenuStatus }
+  | { type: 'draw_result'; payload: { selectedMenu: string } });

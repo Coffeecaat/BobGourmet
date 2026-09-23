@@ -3,37 +3,61 @@ import { useForm } from 'react-hook-form';
 import { useAuth } from '../../contexts/AuthContext';
 import { LoginRequest } from '../../types';
 import { GoogleOAuthButton } from './GoogleOAuthButton';
-import ResendVerification from './ResendVerification';
+import AutoResendVerification from './AutoResendVerification';
 
 interface LoginFormProps {
   onSwitchToSignup: () => void;
 }
 
 export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup }) => {
-  const { login, isLoading } = useAuth();
+  const { login } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
   const { register, handleSubmit, formState: { errors } } = useForm<LoginRequest>();
-  const [showResendOption, setShowResendOption] = useState(false);
+  const [lastEmailVerificationError, setLastEmailVerificationError] = useState<string | null>(
+    () => sessionStorage.getItem('emailVerificationError')
+  );
+  const [usernameForResend, setUsernameForResend] = useState<string>(
+    () => sessionStorage.getItem('usernameForResend') || ''
+  );
 
   const onSubmit = async (data: LoginRequest) => {
     try {
-      setShowResendOption(false); // Hide resend option on new login attempt
+      setIsLoading(true);
+      setLastEmailVerificationError(null); // Clear previous error
+      sessionStorage.removeItem('emailVerificationError');
       await login(data);
+      setIsLoading(false);
     } catch (error: any) {
       // Check if the error is specifically about email verification
       const errorMessage = error.response?.data?.message || '';
-      if (errorMessage.toLowerCase().includes('email verification') || 
-          errorMessage.includes('이메일 인증이 필요합니다')) {
-        setShowResendOption(true);
+      const hasEmailVerification = errorMessage.toLowerCase().includes('email verification');
+      const hasKoreanMessage = errorMessage.includes('이메일 인증이 필요합니다');
+      
+      if (hasEmailVerification || hasKoreanMessage) {
+        sessionStorage.setItem('emailVerificationError', errorMessage);
+        sessionStorage.setItem('usernameForResend', data.username);
+        setLastEmailVerificationError(errorMessage);
+        setUsernameForResend(data.username);
+      } else {
+        sessionStorage.removeItem('emailVerificationError');
+        sessionStorage.removeItem('usernameForResend');
       }
+      setIsLoading(false);
     }
   };
 
   const handleResendSuccess = () => {
-    setShowResendOption(false);
+    sessionStorage.removeItem('emailVerificationError');
+    sessionStorage.removeItem('usernameForResend');
+    setLastEmailVerificationError(null);
+    setUsernameForResend('');
   };
 
   const handleResendCancel = () => {
-    setShowResendOption(false);
+    sessionStorage.removeItem('emailVerificationError');
+    sessionStorage.removeItem('usernameForResend');
+    setLastEmailVerificationError(null);
+    setUsernameForResend('');
   };
 
   return (
@@ -81,11 +105,14 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onSwitchToSignup }) => {
       </form>
 
       {/* Email Verification Resend Section */}
-      {showResendOption && (
-        <ResendVerification 
-          onSuccess={handleResendSuccess}
-          onCancel={handleResendCancel}
-        />
+      {lastEmailVerificationError && usernameForResend && (
+        <div className="mt-4">
+          <AutoResendVerification 
+            username={usernameForResend}
+            onSuccess={handleResendSuccess}
+            onCancel={handleResendCancel}
+          />
+        </div>
       )}
 
       <div className="mt-6">
